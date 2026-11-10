@@ -79,4 +79,28 @@ public class Rack
 
         return slots;
     }
+
+    /// <summary>
+    /// Kệ chiếm bao nhiêu ô lưới. Dài = Bays × BayWidth, sâu = Depth, mỗi chiều đổi ra ô rồi làm tròn LÊN
+    /// (kệ phải nằm gọn trong các ô nó chiếm; làm tròn xuống thì phần kệ thò ra ngoài ô có thể đè tường mà không bị phát hiện).
+    /// Rotation 0: dài theo trục X (chiếm Cols = ô dài, Rows = ô sâu). Rotation 90: đổi chỗ hai số.
+    /// Nhận cellSize làm tham số vì kệ không biết cạnh ô lưới, chỉ Room biết.
+    /// </summary>
+    public Footprint GetFootprint(double cellSize)
+    {
+        if (cellSize <= 0)
+            throw new ArgumentException("Cạnh ô lưới phải lớn hơn 0.", nameof(cellSize));
+
+        int lengthCells = CellsFor(Bays * BayWidth, cellSize);
+        int depthCells = CellsFor(Depth, cellSize);
+
+        return Rotation == 90
+            ? new Footprint(depthCells, lengthCells)
+            : new Footprint(lengthCells, depthCells);
+    }
+
+    // Trừ Epsilon trước khi làm tròn lên: phép chia số thực có thể ra 11,000000000000002 thay vì 11,
+    // và làm tròn lên sẽ thành 12 ô. Tối thiểu 1 ô vì kệ nhỏ hơn một ô vẫn chiếm ô đó.
+    private static int CellsFor(double meters, double cellSize)
+        => Math.Max(1, (int)Math.Ceiling(meters / cellSize - Tolerance.Epsilon));
 }
