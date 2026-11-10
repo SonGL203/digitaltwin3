@@ -58,7 +58,7 @@ cd frontend && npm run build
 
 ```
 src/Warehouse.Api/          Web API — project duy nhất cần chạy
-├── Entities/               Đồ vật trong kho + luật của chính nó
+├── Models/               Đồ vật trong kho + luật của chính nó
 │   ├── PalletSize.cs       Cỡ A/B/C (dữ liệu cấu hình), Contains()
 │   ├── Pallet.cs           Dài, rộng, cao, nặng
 │   ├── RackType.cs         Số khung, rộng khung, sâu, cao tầng, số tầng, có nóc
@@ -78,7 +78,7 @@ src/Warehouse.Api/          Web API — project duy nhất cần chạy
 ├── Controllers/            Cửa nhận request
 │   ├── PalletsController.cs   POST /api/pallets/allocate, GET /api/pallets
 │   └── LayoutController.cs    GET/PUT /api/layout, POST /api/layout/racks
-├── Dtos/                   Dữ liệu vào/ra API (có [Range] kiểm tra đầu vào)
+├── ViewModels/           Dữ liệu vào/ra API (có [Range] kiểm tra đầu vào)
 ├── wwwroot/                Frontend đã build (lúc demo, không commit)
 └── Program.cs              Nối dây interface → lớp thật
 
@@ -86,7 +86,7 @@ tests/Warehouse.Tests/
 ├── Rules/                  SlotTests, AllocatorTests, PlacementValidatorTests
 ├── Services/               PalletServiceTests (service + kho giả)
 ├── Api/                    PalletsApiTests (gọi HTTP, service giả)
-├── ArchitectureTests.cs    Entities/Rules không dính EF, ASP.NET
+├── ArchitectureTests.cs    Models/Rules không dính EF, ASP.NET
 ├── Fakes/                  InMemoryWarehouseStore (kho giả = List trong RAM)
 └── TestData.cs             Kệ mẫu, lô 6A + 2B…
 
@@ -101,13 +101,13 @@ frontend/src/
 ### Phụ thuộc giữa các tầng
 
 ```
-Controllers → Services → Rules → Entities
+Controllers → Services → Rules → Models
                  ↓
          IWarehouseStore ← EfWarehouseStore (Data)
 ```
 
-- `Entities` và `Rules` là C# thuần: không dùng EF Core hay ASP.NET (`ArchitectureTests` kiểm tra).
-- Controller mỏng: nhận DTO, gọi service, trả kết quả.
+- `Models` và `Rules` là C# thuần: không dùng EF Core hay ASP.NET (`ArchitectureTests` kiểm tra).
+- Controller mỏng: nhận ViewModel, gọi service, trả kết quả.
 - **Frontend không chứa luật**: không tự chọn khung, không tự kiểm tra đặt kệ — mọi quyết định đi qua API.
 
 ## Mô hình dữ liệu
@@ -154,12 +154,12 @@ Theo tài liệu *Quy tắc xếp pallet vào kệ*:
 
 ## Lộ trình
 
-- [ ] **Ngày 1 — Entities và luật xếp:** `PalletSize`, `RackType`, `Rack.CreateSlots`, `Slot.CanHold`, `PalletSizer`, `Allocator` + test; lô 6A + 2B xếp đủ 8 pallet. Chưa có EF, chưa có controller.
+- [ ] **Ngày 1 — Models và luật xếp:** `PalletSize`, `RackType`, `Rack.CreateSlots`, `Slot.CanHold`, `PalletSizer`, `Allocator` + test; lô 6A + 2B xếp đủ 8 pallet. Chưa có EF, chưa có controller.
 - [ ] **Ngày 2 — Mặt bằng:** `PlacementValidator` + test, `LayoutService`, `LayoutController`, store tạm; trình vẽ 2D, đặt kệ có bóng mờ hợp lệ/không, phím R xoay.
 - [ ] **Ngày 3 — Kho 3D và xếp lô:** `PalletService`, `PalletsController` + test; dựng kệ 3D, khung tô màu theo nhãn, màn Nhập hàng, nút Xếp tự động, hiệu ứng bay.
 - [ ] **Ngày 4 — Hoàn thiện:** EF Core, build vào `wwwroot`, sửa lỗi + test hồi quy, trường hợp biên, dữ liệu demo, báo cáo thuật toán, video demo.
 
-Nếu trễ, cắt theo thứ tự: EF Core (giữ store tạm) → hiệu ứng bay → bảng cấu hình trên giao diện → công cụ vẽ tường. Entities, Rules và test của chúng không bao giờ cắt.
+Nếu trễ, cắt theo thứ tự: EF Core (giữ store tạm) → hiệu ứng bay → bảng cấu hình trên giao diện → công cụ vẽ tường. Models, Rules và test của chúng không bao giờ cắt.
 
 ## Kịch bản demo (~5 phút)
 
