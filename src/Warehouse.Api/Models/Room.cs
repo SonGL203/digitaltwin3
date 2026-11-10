@@ -41,4 +41,53 @@ public class Room
         Margin = margin;
         Cells = cells;
     }
+
+    /// <summary>Chiều rộng thật của phòng theo trục X (m).</summary>
+    public double WidthMeters => Cols * CellSize;
+
+    /// <summary>Chiều sâu thật của phòng theo trục Y của lưới (m).</summary>
+    public double DepthMeters => Rows * CellSize;
+
+    /// <summary>Ô (x, y) có nằm trong lưới không. x là cột, y là hàng, đều đếm từ 0.</summary>
+    public bool IsInside(int x, int y) => x >= 0 && x < Cols && y >= 0 && y < Rows;
+
+    /// <summary>
+    /// Loại của ô (x, y). Ném lỗi nếu ngoài lưới, để nơi gọi phải kiểm tra IsInside trước thay vì đọc nhầm ô khác.
+    /// </summary>
+    public CellType CellAt(int x, int y) => FromChar(Cells[IndexOf(x, y)]);
+
+    /// <summary>Đặt loại cho ô (x, y): vẽ hoặc xoá tường, vật cản. Chỉ ô đó đổi, độ dài Cells giữ nguyên.</summary>
+    public void SetCell(int x, int y, CellType type)
+    {
+        int index = IndexOf(x, y);
+        var chars = Cells.ToCharArray();
+        chars[index] = ToChar(type);
+        Cells = new string(chars);
+    }
+
+    /// <summary>Ô là tường hoặc vật cản (kệ không được đè). Ném lỗi nếu ô ngoài lưới.</summary>
+    public bool IsBlocked(int x, int y) => CellAt(x, y) != CellType.Empty;
+
+    // Vị trí của ô (x, y) trong chuỗi Cells: hàng nhân số cột, cộng cột. Chỗ duy nhất tính công thức này.
+    private int IndexOf(int x, int y)
+    {
+        if (!IsInside(x, y))
+            throw new ArgumentException($"Ô ({x}, {y}) nằm ngoài phòng {Cols} × {Rows}.");
+
+        return y * Cols + x;
+    }
+
+    private static CellType FromChar(char c) => c switch
+    {
+        WallCell => CellType.Wall,
+        ObstacleCell => CellType.Obstacle,
+        _ => CellType.Empty,
+    };
+
+    private static char ToChar(CellType type) => type switch
+    {
+        CellType.Wall => WallCell,
+        CellType.Obstacle => ObstacleCell,
+        _ => EmptyCell,
+    };
 }
