@@ -20,19 +20,21 @@ Luật nghiệp vụ nằm ở backend ASP.NET Core (C#); frontend Vite + Three.
 
 ## Công nghệ
 
-- **Backend:** ASP.NET Core Web API (.NET), EF Core
+- **Backend:** ASP.NET Core Web API (.NET 10), EF Core
 - **Test:** xUnit, `WebApplicationFactory` cho test API
 - **Frontend:** Vite + JavaScript thuần, Three.js (OrbitControls, InstancedMesh), Canvas 2D
 
 ## Cách chạy
 
-Yêu cầu: .NET SDK 8 trở lên, Node.js 18 trở lên.
+Yêu cầu: .NET SDK 10, Node.js 20 trở lên.
 
-Chạy backend (mặc định phục vụ cả frontend đã build trong `wwwroot`):
+Chạy backend tại http://localhost:5251 (phục vụ cả frontend đã build trong `wwwroot`; kiểm tra nhanh: `/api/health`):
 
 ```bash
 dotnet run --project src/Warehouse.Api
 ```
+
+Thử API bằng Swagger UI (chỉ bật ở môi trường Development): mở http://localhost:5251/swagger. Tài liệu OpenAPI: `/openapi/v1.json`.
 
 Chạy frontend khi phát triển (Vite proxy `/api` sang backend):
 
