@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Warehouse.Api.Data;
+using Warehouse.Api.Infrastructure;
 using Warehouse.Api.Services;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
@@ -11,6 +12,18 @@ builder.Services.AddDbContext<WarehouseDbContext>(options =>
 builder.Services.AddScoped<IWarehouseStore, EfWarehouseStore>();
 builder.Services.AddScoped<ILayoutService, LayoutService>();
 var app = builder.Build();
+
+// Phòng mẫu cho demo: bật bằng "Seed:SampleLayout": true. Tắt khi muốn tự vẽ phòng từ đầu.
+if (app.Configuration.GetValue<bool>("Seed:SampleLayout"))
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        SampleLayoutSeeder.Seed(
+            scope.ServiceProvider.GetRequiredService<ILayoutService>(),
+            scope.ServiceProvider.GetRequiredService<ILogger<Program>>(),
+            Path.Combine(app.Environment.ContentRootPath, "SampleData", "sample-layout.json"));
+    }
+}
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();

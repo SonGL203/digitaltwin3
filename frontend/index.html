@@ -7,11 +7,38 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <header>
-      <strong>WarehouseTwin</strong>
-      <span id="api-status">Đang kết nối API…</span>
+    <header class="topbar">
+      <strong class="brand">WarehouseTwin</strong>
+      <nav class="steps" id="steps" aria-label="Các bước">
+        <button type="button" data-step="layout">1. Mặt bằng</button>
+        <button type="button" data-step="warehouse">2. Kho 3D</button>
+        <button type="button" data-step="receive">3. Nhập hàng</button>
+      </nav>
+      <span id="api-status" class="api-status">Đang kết nối API…</span>
     </header>
-    <main id="viewport"></main>
+
+    <div class="workspace">
+      <aside class="sidebar" id="sidebar"></aside>
+
+      <main class="stage">
+        <section class="view" id="view-layout">
+          <div class="toolbar" id="toolbar-2d"></div>
+          <div class="canvas-wrap" id="editor2d"></div>
+        </section>
+        <section class="view" id="view-warehouse" hidden>
+          <div class="canvas-wrap" id="viewport3d"></div>
+        </section>
+        <section class="view placeholder" id="view-receive" hidden>
+          <p>Màn nhập hàng làm ở Ngày 3.</p>
+        </section>
+      </main>
+    </div>
+
+    <footer class="statusbar">
+      <span id="status-message"></span>
+      <span id="status-cursor"></span>
+    </footer>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
