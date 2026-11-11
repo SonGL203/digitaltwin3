@@ -20,11 +20,20 @@ public class Room
     public List<Obstacle> Obstacles { get; } = new();
 
     public Room(double width, double depth, double gridSize, double minGap, double margin)
+        => Configure(width, depth, gridSize, minGap, margin);
+
+    /// <summary>
+    /// Đổi kích thước, lưới, lối đi, khoảng hở. Kiểm tra HẾT rồi mới gán, để số sai không làm phòng bị sửa dở.
+    /// Không kiểm tra kệ/vật cản còn nằm gọn không: cần nhiều đối tượng nên để service lo.
+    /// </summary>
+    public void Configure(double width, double depth, double gridSize, double minGap, double margin)
     {
         if (width <= 0)
             throw new ArgumentException("Chiều dài phòng phải lớn hơn 0.", nameof(width));
         if (depth <= 0)
             throw new ArgumentException("Chiều rộng phòng phải lớn hơn 0.", nameof(depth));
+        if (gridSize <= 0)
+            throw new ArgumentException("Bước lưới phải lớn hơn 0.", nameof(gridSize));
         if (minGap < 0)
             throw new ArgumentException("Lối đi tối thiểu không được âm.", nameof(minGap));
         if (margin < 0)
@@ -32,9 +41,9 @@ public class Room
 
         Width = width;
         Depth = depth;
+        GridSize = gridSize;
         MinGap = minGap;
         Margin = margin;
-        SetGridSize(gridSize);
     }
 
     /// <summary>Sàn phòng: hình chữ nhật từ (0, 0). Kệ và vật cản phải nằm gọn trong đây.</summary>
@@ -59,4 +68,7 @@ public class Room
             throw new ArgumentException("Vật cản nằm ngoài phòng.", nameof(obstacle));
         Obstacles.Add(obstacle);
     }
+
+    /// <summary>Xoá tường/cột theo Id. Trả false nếu không có.</summary>
+    public bool RemoveObstacle(int obstacleId) => Obstacles.RemoveAll(o => o.Id == obstacleId) > 0;
 }

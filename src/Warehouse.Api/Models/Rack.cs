@@ -24,6 +24,19 @@ public class Rack
     {
         if (string.IsNullOrWhiteSpace(code))
             throw new ArgumentException("Mã kệ không được rỗng.", nameof(code));
+
+        RoomId = roomId;
+        Code = code.Trim();
+        Reconfigure(x, y, rotation, levels, levelHeight, bays, bayWidth, depth, hasTop, maxWeight, productTypeId);
+    }
+
+    /// <summary>
+    /// Đổi vị trí và cấu hình (mọi thứ trừ mã). Kiểm tra HẾT rồi mới gán, để số sai không làm kệ bị sửa dở.
+    /// Sau khi đổi phải sinh lại khung (CreateSlots): việc của service.
+    /// </summary>
+    public void Reconfigure(double x, double y, int rotation, int levels, double levelHeight,
+                            int bays, double bayWidth, double depth, bool hasTop, double maxWeight, int? productTypeId)
+    {
         if (x < 0)
             throw new ArgumentException("Toạ độ X không được âm.", nameof(x));
         if (y < 0)
@@ -43,8 +56,6 @@ public class Rack
         if (maxWeight <= 0)
             throw new ArgumentException("Tải trọng khung phải lớn hơn 0.", nameof(maxWeight));
 
-        RoomId = roomId;
-        Code = code.Trim();
         X = x;
         Y = y;
         Rotation = rotation;

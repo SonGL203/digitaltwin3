@@ -15,6 +15,7 @@ public class InMemoryWarehouseStore : IWarehouseStore
     private Room? _room;
     private int _nextRoomId = 1;
     private int _nextRackId = 1;
+    private int _nextObstacleId = 1;
     private int _nextSlotId = 1;
 
     public Room? GetRoom()
@@ -34,6 +35,9 @@ public class InMemoryWarehouseStore : IWarehouseStore
 
             foreach (var rack in room.Racks.Where(r => r.Id == 0))
                 SetId(rack, _nextRackId++);
+
+            foreach (var obstacle in room.Obstacles.Where(o => o.Id == 0))
+                SetId(obstacle, _nextObstacleId++);
 
             _room = room;
         }

@@ -28,6 +28,22 @@ public class LayoutController(ILayoutService layout) : ControllerBase
     [HttpPost("racks")]
     public IActionResult AddRack(RackRequest request) => ToHttp(layout.AddRack(request));
 
+    /// <summary>Sửa phòng: kích thước, bước lưới, lối đi, khoảng hở. Đổi lưới không làm kệ nào di chuyển.</summary>
+    [HttpPut("room")]
+    public IActionResult UpdateRoom(RoomRequest request) => ToHttp(layout.UpdateRoom(request));
+
+    /// <summary>Thêm tường ngăn hoặc cột.</summary>
+    [HttpPost("obstacles")]
+    public IActionResult AddObstacle(ObstacleRequest request) => ToHttp(layout.AddObstacle(request));
+
+    /// <summary>Xoá tường hoặc cột.</summary>
+    [HttpDelete("obstacles/{id:int}")]
+    public IActionResult RemoveObstacle(int id) => ToHttp(layout.RemoveObstacle(id));
+
+    /// <summary>Sửa cấu hình kệ (không đổi mã): kiểm tra lại, sinh lại khung. Kệ đang có hàng thì 409.</summary>
+    [HttpPut("racks/{id:int}")]
+    public IActionResult UpdateRack(int id, RackRequest request) => ToHttp(layout.UpdateRack(id, request));
+
     // Một chỗ duy nhất đổi lỗi nghiệp vụ sang mã HTTP. Lỗi trả dạng ProblemDetails (chuẩn RFC 9457),
     // câu lý do nằm ở "detail" để frontend hiện thẳng cho người dùng.
     private IActionResult ToHttp<T>(ServiceResult<T> result) => result.Error switch

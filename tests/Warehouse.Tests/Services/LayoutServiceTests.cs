@@ -319,6 +319,329 @@ public class LayoutServiceTests
         Assert.Equal(24, store.GetAllSlots().Count);
     }
 
+    // ---- UpdateRoom ----
+
+    [Fact]
+    public void UpdateRoom_NoRoom_ReturnsNotFound()
+    {
+        var result = new LayoutService(new InMemoryWarehouseStore()).UpdateRoom(RoomReq());
+
+        Assert.Equal(ServiceError.NotFound, result.Error);
+    }
+
+    [Fact]
+    public void UpdateRoom_ChangeGridOnly_AlwaysAllowedAndRacksStay()
+    {
+        var (service, store) = WithRoom();
+        service.AddRack(RackReq("K1", 2.25, 0.75));
+        var req = RoomReq();
+        req.GridSize = 1.0;
+
+        var result = service.UpdateRoom(req);
+
+        Assert.True(result.IsSuccess);
+        var room = store.GetRoom()!;
+        Assert.Equal(1.0, room.GridSize);
+        Assert.Equal(2.25, room.Racks.Single().X);
+    }
+
+    [Fact]
+    public void UpdateRoom_Grow_IsAllowed()
+    {
+        var (service, store) = WithRoom();
+        service.AddRack(RackReq("K1", 0, 0));
+
+        Assert.True(service.UpdateRoom(RoomReq(width: 20, depth: 12)).IsSuccess);
+        Assert.Equal(20, store.GetRoom()!.Width);
+    }
+
+    [Fact]
+    public void UpdateRoom_ShrinkPushesRackOutside_ReturnsInvalidAndKeepsOldSize()
+    {
+        var (service, store) = WithRoom();
+        service.AddRack(RackReq("K2", 6.0, 0));   // x 6 → 9
+
+        var result = service.UpdateRoom(RoomReq(width: 8));
+
+        Assert.Equal(ServiceError.Invalid, result.Error);
+        Assert.Equal("K2: Kệ nằm ngoài sàn.", result.Message);
+        Assert.Equal(10, store.GetRoom()!.Width);
+    }
+
+    [Fact]
+    public void UpdateRoom_BiggerMinGap_RejectsWhenRacksTooClose()
+    {
+        var (service, store) = WithRoom();
+        service.AddRack(RackReq("K1", 0, 0));     // y 0 → 1
+        service.AddRack(RackReq("K2", 0, 2.0));   // cách 1,0 m
+        var req = RoomReq();
+        req.MinGap = 1.5;
+
+        var result = service.UpdateRoom(req);
+
+        Assert.Equal(ServiceError.Invalid, result.Error);
+        Assert.StartsWith("K1: Thiếu lối đi", result.Message);
+        Assert.Equal(1.0, store.GetRoom()!.MinGap);
+    }
+
+    [Fact]
+    public void UpdateRoom_ShrinkPushesObstacleOutside_ReturnsInvalid()
+    {
+        var (service, store) = WithRoom();
+        AddObstacle(store, ObstacleKind.Column, 9.0, 4.0, 0.4, 0.4);
+
+        var result = service.UpdateRoom(RoomReq(width: 9));
+
+        Assert.Equal(ServiceError.Invalid, result.Error);
+        Assert.Equal(10, store.GetRoom()!.Width);
+    }
+
+    [Fact]
+    public void UpdateRoom_RejectedDraft_DoesNotTouchRealRackList()
+    {
+        // Phòng nháp dùng chung đối tượng kệ nhưng có danh sách riêng: phòng thật vẫn đúng 1 kệ.
+        var (service, store) = WithRoom();
+        service.AddRack(RackReq("K1", 6.0, 0));
+
+        service.UpdateRoom(RoomReq(width: 8));
+
+        Assert.Single(store.GetRoom()!.Racks);
+    }
+
+    // ---- AddObstacle / RemoveObstacle ----
+
+    private static ObstacleRequest ColumnReq(double x, double y) => new()
+    {
+        Kind = "Column", X = x, Y = y, Width = 0.4, Depth = 0.4,
+    };
+
+    [Fact]
+    public void AddObstacle_Free_ReturnsIdAndShowsInLayout()
+    {
+        var (service, _) = WithRoom();
+
+        var result = service.AddObstacle(ColumnReq(6.5, 2.0));
+
+        Assert.True(result.IsSuccess);
+        Assert.NotEqual(0, result.Value!.Id);
+        var obstacle = Assert.Single(service.GetLayout().Value!.Obstacles);
+        Assert.Equal(result.Value.Id, obstacle.Id);
+        Assert.Equal("Column", obstacle.Kind);
+    }
+
+    [Fact]
+    public void AddObstacle_TwoObstacles_GetDifferentIds()
+    {
+        var (service, _) = WithRoom();
+
+        var a = service.AddObstacle(ColumnReq(6.5, 2.0)).Value!.Id;
+        var b = service.AddObstacle(ColumnReq(8.0, 2.0)).Value!.Id;
+
+        Assert.NotEqual(a, b);
+    }
+
+    [Fact]
+    public void AddObstacle_OnRack_ReturnsInvalidAndSavesNothing()
+    {
+        var (service, store) = WithRoom();
+        service.AddRack(RackReq("K1", 0, 0));   // x 0 → 3, y 0 → 1
+
+        var result = service.AddObstacle(ColumnReq(1.0, 0.3));
+
+        Assert.Equal(ServiceError.Invalid, result.Error);
+        Assert.Equal("Vật cản đè lên kệ K1.", result.Message);
+        Assert.Empty(store.GetRoom()!.Obstacles);
+    }
+
+    [Fact]
+    public void AddObstacle_TouchingRack_IsAllowed()
+    {
+        var (service, _) = WithRoom();
+        service.AddRack(RackReq("K1", 0, 0));   // cạnh phải ở x 3,0
+
+        Assert.True(service.AddObstacle(ColumnReq(3.0, 0.3)).IsSuccess);
+    }
+
+    [Fact]
+    public void AddObstacle_OutsideRoom_ReturnsInvalid()
+    {
+        var (service, store) = WithRoom();
+
+        var result = service.AddObstacle(ColumnReq(9.8, 2.0));   // 9,8 + 0,4 > 10
+
+        Assert.Equal(ServiceError.Invalid, result.Error);
+        Assert.Empty(store.GetRoom()!.Obstacles);
+    }
+
+    [Theory]
+    [InlineData("Door")]
+    [InlineData("5")]      // Enum.TryParse sẽ nhận "5"; service không được nhận
+    [InlineData("wall")]
+    public void AddObstacle_UnknownKind_ReturnsInvalid(string kind)
+    {
+        var (service, store) = WithRoom();
+        var req = ColumnReq(6.5, 2.0);
+        req.Kind = kind;
+
+        Assert.Equal(ServiceError.Invalid, service.AddObstacle(req).Error);
+        Assert.Empty(store.GetRoom()!.Obstacles);
+    }
+
+    [Fact]
+    public void RemoveObstacle_Existing_RemovesItAndRackCanBePlacedThere()
+    {
+        var (service, store) = WithRoom();
+        var id = service.AddObstacle(ColumnReq(1.0, 0.3)).Value!.Id;
+
+        var result = service.RemoveObstacle(id);
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(store.GetRoom()!.Obstacles);
+        Assert.True(service.AddRack(RackReq("K1", 0, 0)).IsSuccess);
+    }
+
+    [Fact]
+    public void RemoveObstacle_Unknown_ReturnsNotFound()
+    {
+        var (service, _) = WithRoom();
+
+        Assert.Equal(ServiceError.NotFound, service.RemoveObstacle(99).Error);
+    }
+
+    // ---- UpdateRack ----
+
+    private static RackRequest RackReqWith(string code, double x, double y, int levels)
+    {
+        var req = RackReq(code, x, y);
+        req.Levels = levels;
+        return req;
+    }
+
+    [Fact]
+    public void UpdateRack_NoRoom_ReturnsNotFound()
+    {
+        var result = new LayoutService(new InMemoryWarehouseStore()).UpdateRack(1, RackReq("K1", 0, 0));
+
+        Assert.Equal(ServiceError.NotFound, result.Error);
+    }
+
+    [Fact]
+    public void UpdateRack_UnknownId_ReturnsNotFound()
+    {
+        var (service, _) = WithRoom();
+
+        Assert.Equal(ServiceError.NotFound, service.UpdateRack(99, RackReq("K1", 0, 0)).Error);
+    }
+
+    [Fact]
+    public void UpdateRack_MoreLevels_RegeneratesSlots()
+    {
+        // 3 tầng × 3 ô + nóc = 12 khung → 4 tầng × 3 ô + nóc = 15 khung.
+        var (service, store) = WithRoom();
+        var id = service.AddRack(RackReq("K1", 0, 0)).Value!.Id;
+
+        var result = service.UpdateRack(id, RackReqWith("K1", 0, 0, levels: 4));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(15, result.Value!.SlotCount);
+        var slots = store.GetSlotsOfRack(id);
+        Assert.Equal(15, slots.Count);
+        Assert.Contains(slots, s => s.Code == "K1-T4-R1");
+        Assert.Equal(15, store.GetAllSlots().Count);   // khung cũ đã bị xoá, không còn 12 + 15
+        Assert.Equal(4, store.GetRoom()!.Racks.Single().Levels);
+    }
+
+    [Fact]
+    public void UpdateRack_MoveOverlappingOwnOldPlace_IsAllowed()
+    {
+        var (service, store) = WithRoom();
+        var id = service.AddRack(RackReq("K1", 0, 0)).Value!.Id;
+
+        Assert.True(service.UpdateRack(id, RackReq("K1", 1.0, 0)).IsSuccess);
+        Assert.Equal(1.0, store.GetRoom()!.Racks.Single().X);
+    }
+
+    [Fact]
+    public void UpdateRack_CodeDiffersOnlyInCaseAndSpaces_IsAllowed()
+    {
+        var (service, _) = WithRoom();
+        var id = service.AddRack(RackReq("K1", 0, 0)).Value!.Id;
+
+        Assert.True(service.UpdateRack(id, RackReq(" k1 ", 0, 0)).IsSuccess);
+    }
+
+    [Fact]
+    public void UpdateRack_ChangeCode_ReturnsInvalid()
+    {
+        var (service, store) = WithRoom();
+        var id = service.AddRack(RackReq("K1", 0, 0)).Value!.Id;
+
+        var result = service.UpdateRack(id, RackReq("K9", 0, 0));
+
+        Assert.Equal(ServiceError.Invalid, result.Error);
+        Assert.Equal("K1", store.GetRoom()!.Racks.Single().Code);
+    }
+
+    [Fact]
+    public void UpdateRack_GrowIntoOtherRack_ReturnsInvalidAndKeepsOldConfig()
+    {
+        var (service, store) = WithRoom();
+        var k1 = service.AddRack(RackReq("K1", 0, 0)).Value!.Id;   // x 0 → 3
+        service.AddRack(RackReq("K2", 4.0, 0));                     // x 4 → 7, cách 1,0 m
+        var wider = RackReq("K1", 0, 0);
+        wider.Bays = 4;                                             // x 0 → 4: chạm K2, thiếu lối đi
+
+        var result = service.UpdateRack(k1, wider);
+
+        Assert.Equal(ServiceError.Invalid, result.Error);
+        Assert.Equal("Thiếu lối đi với K2.", result.Message);
+        Assert.Equal(3, store.GetRoom()!.Racks.Single(r => r.Id == k1).Bays);
+        Assert.Equal(12, store.GetSlotsOfRack(k1).Count);
+    }
+
+    [Fact]
+    public void UpdateRack_BadInput_ReturnsInvalidAndKeepsOldConfig()
+    {
+        var (service, store) = WithRoom();
+        var id = service.AddRack(RackReq("K1", 0, 0)).Value!.Id;
+
+        var result = service.UpdateRack(id, RackReq("K1", 0, 0, rotation: 45));
+
+        Assert.Equal(ServiceError.Invalid, result.Error);
+        Assert.Equal(0, store.GetRoom()!.Racks.Single().Rotation);
+    }
+
+    [Fact]
+    public void UpdateRack_HasPallet_ReturnsConflictAndKeepsSlots()
+    {
+        var (service, store) = WithRoom();
+        var id = service.AddRack(RackReq("K1", 0, 0)).Value!.Id;
+        var size = new PalletSize("A", 0.8, 0.6, 0.5, "#888");
+        store.GetSlotsOfRack(id)[0].Place(new Pallet(1, size, "b1-P001"));
+
+        var result = service.UpdateRack(id, RackReqWith("K1", 0, 0, levels: 4));
+
+        Assert.Equal(ServiceError.Conflict, result.Error);
+        Assert.Equal(12, store.GetSlotsOfRack(id).Count);
+        Assert.Equal(3, store.GetRoom()!.Racks.Single().Levels);
+    }
+
+    [Fact]
+    public void UpdateRack_WritesInsideOneTransaction()
+    {
+        var store = new SpyWarehouseStore();
+        var service = new LayoutService(store);
+        service.CreateRoom(RoomReq());
+        var id = service.AddRack(RackReq("K1", 0, 0)).Value!.Id;
+        store.Writes.Clear();
+
+        service.UpdateRack(id, RackReqWith("K1", 0, 0, levels: 4));
+
+        Assert.Equal(
+            new[] { "SaveRoom (trong transaction)", "RemoveSlotsOfRack (trong transaction)", "AddSlots (trong transaction)" },
+            store.Writes);
+    }
+
     // ---- transaction ----
 
     [Fact]

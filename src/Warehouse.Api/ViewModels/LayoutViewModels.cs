@@ -41,7 +41,24 @@ public class RackRequest
     public int? ProductTypeId { get; set; }
 }
 
+/// <summary>Tường ngăn hoặc cột, hình chữ nhật bằng mét. X, Y là góc trên trái.</summary>
+public class ObstacleRequest
+{
+    /// <summary>"Wall" (tường) hoặc "Column" (cột).</summary>
+    [Required, AllowedValues("Wall", "Column")] public string Kind { get; set; } = "";
+    [Range(0, 500)] public double X { get; set; }
+    [Range(0, 500)] public double Y { get; set; }
+    [Range(0.01, 500)] public double Width { get; set; }
+    [Range(0.01, 500)] public double Depth { get; set; }
+}
+
 // ===== Đầu ra (API trả về) =====
+
+/// <summary>Id do server gán.</summary>
+public record ObstacleCreatedViewModel(int Id);
+
+/// <summary>SlotCount do server sinh lại (ví dụ 2 tầng → 3 tầng thì 12 → 16 khung).</summary>
+public record RackUpdatedViewModel(int Id, int SlotCount);
 
 /// <summary>Chỉ trả Id: mọi số đo khác frontend vừa gửi lên, server không sửa gì.</summary>
 public record RoomCreatedViewModel(int Id);
