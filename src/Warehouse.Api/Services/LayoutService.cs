@@ -39,16 +39,16 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
         Room room;
         try
         {
-            room = new Room(request.Cols, request.Rows, request.CellSize, request.MinGap, request.Margin, request.Cells);
+            room = new Room(request.Width, request.Depth, request.GridSize, request.MinGap, request.Margin);
         }
         catch (ArgumentException ex)
         {
-            // Ví dụ Cells sai độ dài: ViewModel không kiểm tra được vì phụ thuộc Cols × Rows, Room tự chặn.
+            // ViewModel đã chặn [Range]; đây là lưới an toàn khi service bị gọi thẳng (test, seed).
             return ServiceResult<RoomCreatedViewModel>.Fail(ServiceError.Invalid, ex.Message);
         }
 
         store.SaveRoom(room);
-        return ServiceResult<RoomCreatedViewModel>.Ok(new RoomCreatedViewModel(room.Id, room.Cells));
+        return ServiceResult<RoomCreatedViewModel>.Ok(new RoomCreatedViewModel(room.Id));
     }
 
     /// <summary>
@@ -66,21 +66,10 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
             return ServiceResult<PlacementCheckViewModel>.Ok(new PlacementCheckViewModel(false, error, 0, 0));
 
         var reason = PlacementValidator.Validate(room, rack);
-        var f = rack.GetFootprint(room.CellSize);
-        return ServiceResult<PlacementCheckViewModel>.Ok(new PlacementCheckViewModel(reason is null, reason, f.Cols, f.Rows));
+        var b = rack.GetBounds();
+        return ServiceResult<PlacementCheckViewModel>.Ok(new PlacementCheckViewModel(reason is null, reason, b.Width, b.Depth));
     }
 
-    /// <summary>
-    /// Đặt kệ thật. Thứ tự quan trọng:
-    /// 1. Chặn trùng mã TRƯỚC khi kiểm tra đặt: PlacementValidator bỏ qua kệ cùng mã, nên nếu không chặn,
-    ///    kệ mới trùng mã K1 đặt đè lên K1 vẫn được báo hợp lệ.
-    /// 2. Kiểm tra lại bằng PlacementValidator: không tin kết quả validate frontend gọi lúc kéo,
-    ///    vì giữa lúc kéo và lúc thả có thể đã có người đặt kệ khác vào đó.
-    /// 3. Lưu kệ (SaveRoom gán Rack.Id) rồi MỚI sinh khung: CreateSlots lấy Rack.Id làm RackId,
-    ///    sinh trước thì mọi khung có RackId = 0.
-    /// 4. Bước 3 gồm hai lần ghi nên bọc trong một transaction: nếu lưu khung lỗi thì kệ cũng bị huỷ,
-    ///    không bao giờ có kệ mà không có khung.
-    /// </summary>
     public ServiceResult<RackCreatedViewModel> AddRack(RackRequest request)
     {
         var room = store.GetRoom();
@@ -129,10 +118,11 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
     private RoomViewModel ToViewModel(Room room)
     {
         var racks = room.Racks
-            .Select(r => RackViewModel.From(r, room.CellSize, store.GetSlotsOfRack(r.Id).Count))
+            .Select(r => RackViewModel.From(r, store.GetSlotsOfRack(r.Id).Count))
             .ToList();
+        var obstacles = room.Obstacles.Select(ObstacleViewModel.From).ToList();
 
-        return new RoomViewModel(room.Id, room.Cols, room.Rows, room.CellSize, room.Cells, room.MinGap, room.Margin, racks);
+        return new RoomViewModel(room.Id, room.Width, room.Depth, room.GridSize, room.MinGap, room.Margin, racks, obstacles);
     }
 
     private static ServiceResult<T> NoRoom<T>()

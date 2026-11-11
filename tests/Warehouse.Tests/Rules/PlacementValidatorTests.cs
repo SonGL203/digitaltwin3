@@ -3,31 +3,44 @@ using Warehouse.Api.Rules;
 
 namespace Warehouse.Tests.Rules;
 
-// Phòng 20 cột × 10 hàng, ô 0,5 m, lối đi tối thiểu 1,0 m (= 2 ô).
-// Kệ mẫu: 2 ô × 1,0 m dài 2,0 m = 4 ô, sâu 1,0 m = 2 ô → chiếm 4 × 2 ô (xoay 90° thì 2 × 4).
+// Phòng 10 m × 5 m, lối đi tối thiểu 1,0 m. Mọi toạ độ bằng mét.
+// Kệ mẫu: 2 ô × 1,0 m = dài 2,0 m theo X, sâu 1,0 m theo Y (xoay 90° thì 1,0 × 2,0).
 public class PlacementValidatorTests
 {
-    private static Room MakeRoom(double minGap = 1.0) => new(20, 10, 0.5, minGap, 0.05);
+    private static Room MakeRoom(double minGap = 1.0) => new(10, 5, 0.5, minGap, 0.05);
 
-    private static Rack MakeRack(string code, int x, int y, int rotation = 0)
+    private static Rack MakeRack(string code, double x, double y, int rotation = 0)
         => new(1, code, x, y, rotation, 2, 1.3, 2, 1.0, 1.0, false, 1000);
+
+    private static Obstacle Wall(double x, double y, double width, double depth)
+        => new(1, ObstacleKind.Wall, x, y, width, depth);
+
+    private static Obstacle Column(double x, double y)
+        => new(1, ObstacleKind.Column, x, y, 0.4, 0.4);
 
     // ---- hợp lệ ----
 
     [Fact]
     public void Validate_RackInEmptyRoom_ReturnsNull()
     {
-        Assert.Null(PlacementValidator.Validate(MakeRoom(), MakeRack("K1", 5, 3)));
+        Assert.Null(PlacementValidator.Validate(MakeRoom(), MakeRack("K1", 2.5, 1.5)));
+    }
+
+    [Fact]
+    public void Validate_PositionOffGrid_IsAllowed()
+    {
+        // Grid chỉ để snap trên giao diện; server không ép kệ nằm đúng lưới.
+        Assert.Null(PlacementValidator.Validate(MakeRoom(), MakeRack("K1", 2.37, 1.13)));
     }
 
     // ---- ngoài sàn ----
 
     [Theory]
-    [InlineData(16, 0, true)]    // cột 16..19: sát mép phải, vừa trong lưới
-    [InlineData(17, 0, false)]   // cột 17..20: thò ra ngoài
-    [InlineData(0, 8, true)]     // hàng 8..9: sát mép dưới
-    [InlineData(0, 9, false)]    // hàng 9..10: thò ra ngoài
-    public void Validate_RackAtGridEdge(int x, int y, bool allowed)
+    [InlineData(8.0, 0, true)]     // x 8 → 10: sát mép phải
+    [InlineData(8.1, 0, false)]    // x 8,1 → 10,1: thò ra ngoài
+    [InlineData(0, 4.0, true)]     // y 4 → 5: sát mép dưới
+    [InlineData(0, 4.1, false)]    // y 4,1 → 5,1: thò ra ngoài
+    public void Validate_RackAtRoomEdge(double x, double y, bool allowed)
     {
         var reason = PlacementValidator.Validate(MakeRoom(), MakeRack("K1", x, y));
 
@@ -38,10 +51,10 @@ public class PlacementValidatorTests
     }
 
     [Theory]
-    [InlineData(18, 6, true)]    // xoay 90°: chiếm 2 cột × 4 hàng, cột 18..19, hàng 6..9
-    [InlineData(19, 6, false)]   // cột 19..20: ngoài
-    [InlineData(18, 7, false)]   // hàng 7..10: ngoài
-    public void Validate_Rotated90RackAtGridEdge_UsesSwappedFootprint(int x, int y, bool allowed)
+    [InlineData(9.0, 3.0, true)]   // xoay 90°: rộng 1 × sâu 2 → x 9 → 10, y 3 → 5
+    [InlineData(9.1, 3.0, false)]
+    [InlineData(9.0, 3.1, false)]
+    public void Validate_Rotated90RackAtRoomEdge_UsesSwappedSize(double x, double y, bool allowed)
     {
         var reason = PlacementValidator.Validate(MakeRoom(), MakeRack("K1", x, y, rotation: 90));
 
@@ -51,43 +64,43 @@ public class PlacementValidatorTests
             Assert.Equal("Kệ nằm ngoài sàn.", reason);
     }
 
-    // ---- đè tường, vật cản ----
+    // ---- đè tường, cột ----
 
     [Fact]
-    public void Validate_RackOnWall_ReportsFirstWallCell()
+    public void Validate_RackOnWall_ReportsWallPosition()
     {
         var room = MakeRoom();
-        room.SetCell(6, 3, CellType.Wall);
+        room.AddObstacle(Wall(3.0, 0, 0.2, 5));   // tường ngăn dọc ở x 3,0 → 3,2
 
-        Assert.Equal("Kệ đè tường ở ô (6, 3).", PlacementValidator.Validate(room, MakeRack("K1", 5, 3)));
+        Assert.Equal("Kệ đè tường tại (3; 0) m.", PlacementValidator.Validate(room, MakeRack("K1", 2.5, 1.5)));
     }
 
     [Fact]
-    public void Validate_RackOnObstacle_ReportsObstacle()
+    public void Validate_RackOnColumn_ReportsColumnPosition()
     {
         var room = MakeRoom();
-        room.SetCell(7, 4, CellType.Obstacle);
+        room.AddObstacle(Column(3.5, 2.0));
 
-        Assert.Equal("Kệ đè vật cản ở ô (7, 4).", PlacementValidator.Validate(room, MakeRack("K1", 5, 3)));
+        Assert.Equal("Kệ đè cột tại (3.5; 2) m.", PlacementValidator.Validate(room, MakeRack("K1", 2.5, 1.5)));
     }
 
     [Fact]
-    public void Validate_WallNextToRack_IsAllowed()
+    public void Validate_ColumnTouchingRackEdge_IsAllowed()
     {
         var room = MakeRoom();
-        room.SetCell(9, 3, CellType.Wall);   // ngay sau cột 8, kệ chiếm cột 5..8
+        room.AddObstacle(Column(4.5, 1.5));   // kệ x 2,5 → 4,5: cột bắt đầu đúng ở cạnh phải
 
-        Assert.Null(PlacementValidator.Validate(room, MakeRack("K1", 5, 3)));
+        Assert.Null(PlacementValidator.Validate(room, MakeRack("K1", 2.5, 1.5)));
     }
 
     [Fact]
     public void Validate_WallAndTooCloseToRack_ReportsWallNotAisle()
     {
         var room = MakeRoom();
-        room.SetCell(5, 3, CellType.Wall);
-        room.Racks.Add(MakeRack("K2", 10, 3));   // chỉ cách 1 ô trống, thiếu lối đi
+        room.AddObstacle(Column(2.5, 1.5));
+        room.Racks.Add(MakeRack("K2", 5.0, 1.5));   // chỉ cách 0,5 m, thiếu lối đi
 
-        Assert.Equal("Kệ đè tường ở ô (5, 3).", PlacementValidator.Validate(room, MakeRack("K1", 5, 3)));
+        Assert.Equal("Kệ đè cột tại (2.5; 1.5) m.", PlacementValidator.Validate(room, MakeRack("K1", 2.5, 1.5)));
     }
 
     // ---- đè kệ khác ----
@@ -96,33 +109,33 @@ public class PlacementValidatorTests
     public void Validate_OverlapsExistingRack_ReportsOverlap()
     {
         var room = MakeRoom();
-        room.Racks.Add(MakeRack("K2", 5, 3));   // cột 5..8
+        room.Racks.Add(MakeRack("K2", 2.5, 1.5));   // x 2,5 → 4,5
 
-        Assert.Equal("Kệ đè lên K2.", PlacementValidator.Validate(room, MakeRack("K3", 7, 3)));
+        Assert.Equal("Kệ đè lên K2.", PlacementValidator.Validate(room, MakeRack("K3", 3.5, 1.5)));
     }
 
     [Fact]
     public void Validate_OverlapWithOneRackAndTooCloseToAnother_ReportsOverlapFirst()
     {
         var room = MakeRoom();
-        room.Racks.Add(MakeRack("K2", 5, 3));    // cột 5..8
-        room.Racks.Add(MakeRack("K4", 12, 3));   // cột 12..15, liền sát kệ mới (cột 8..11)
+        room.Racks.Add(MakeRack("K2", 2.5, 1.5));   // x 2,5 → 4,5
+        room.Racks.Add(MakeRack("K4", 6.0, 1.5));   // kệ mới x 4,0 → 6,0: liền sát K4
 
-        Assert.Equal("Kệ đè lên K2.", PlacementValidator.Validate(room, MakeRack("K3", 8, 3)));
+        Assert.Equal("Kệ đè lên K2.", PlacementValidator.Validate(room, MakeRack("K3", 4.0, 1.5)));
     }
 
     // ---- lối đi ----
 
     [Theory]
-    [InlineData(9, 3, false)]    // cột 9 liền kệ K2 (5..8): 0 ô trống
-    [InlineData(10, 3, false)]   // 1 ô trống (cột 9) < 2
-    [InlineData(11, 3, true)]    // 2 ô trống (cột 9, 10): đủ lối đi
-    public void Validate_AisleBesideExistingRack(int x, int y, bool allowed)
+    [InlineData(4.5, false)]   // liền K2 (2,5 → 4,5): 0 m
+    [InlineData(5.0, false)]   // 0,5 m < 1,0
+    [InlineData(5.5, true)]    // đúng 1,0 m: đủ
+    public void Validate_AisleBesideExistingRack(double x, bool allowed)
     {
         var room = MakeRoom();
-        room.Racks.Add(MakeRack("K2", 5, 3));
+        room.Racks.Add(MakeRack("K2", 2.5, 1.5));
 
-        var reason = PlacementValidator.Validate(room, MakeRack("K1", x, y));
+        var reason = PlacementValidator.Validate(room, MakeRack("K1", x, 1.5));
 
         if (allowed)
             Assert.Null(reason);
@@ -131,40 +144,61 @@ public class PlacementValidatorTests
     }
 
     [Theory]
-    [InlineData(5, 6, false)]    // K2 chiếm hàng 3..4; hàng 5 là 1 ô trống
-    [InlineData(5, 7, true)]     // hàng 5, 6: 2 ô trống
-    public void Validate_AisleAboveOrBelowExistingRack(int x, int y, bool allowed)
+    [InlineData(3.0, false)]   // K2 y 1,5 → 2,5; khoảng trống 0,5 m
+    [InlineData(3.5, true)]    // khoảng trống 1,0 m
+    public void Validate_AisleAboveOrBelowExistingRack(double y, bool allowed)
     {
         var room = MakeRoom();
-        room.Racks.Add(MakeRack("K2", 5, 3));
+        room.Racks.Add(MakeRack("K2", 2.5, 1.5));
 
-        var reason = PlacementValidator.Validate(room, MakeRack("K1", x, y));
+        var reason = PlacementValidator.Validate(room, MakeRack("K1", 2.5, y));
 
         if (allowed)
             Assert.Null(reason);
         else
             Assert.Equal("Thiếu lối đi với K2.", reason);
+    }
+
+    [Fact]
+    public void Validate_DiagonalNeighbour_NeedsGapOnOnlyOneAxis()
+    {
+        // K1 chéo góc với K2: cách 0,5 m theo X nhưng 1,0 m theo Y → đi qua được.
+        var room = MakeRoom();
+        room.Racks.Add(MakeRack("K2", 2.5, 1.5));   // x 2,5 → 4,5; y 1,5 → 2,5
+
+        Assert.Null(PlacementValidator.Validate(room, MakeRack("K1", 5.0, 3.5)));
+        Assert.Equal("Thiếu lối đi với K2.", PlacementValidator.Validate(room, MakeRack("K1", 5.0, 3.0)));
+    }
+
+    [Fact]
+    public void Validate_AisleExactlyMinGapWithFloatingPointNoise_IsAllowed()
+    {
+        // 0,1 + 0,2 + 4,2 = 4,500000000000001 trong double; khoảng cách vẫn phải tính là đúng 1,0 m.
+        var room = MakeRoom();
+        room.Racks.Add(MakeRack("K2", 0.1 + 0.2 + 4.2 - 2.0, 1.5));   // x ≈ 2,5 → 4,5
+
+        Assert.Null(PlacementValidator.Validate(room, MakeRack("K1", 5.5, 1.5)));
     }
 
     [Fact]
     public void Validate_MinGapZero_AllowsRacksSideBySide_ButStillRejectsOverlap()
     {
         var room = MakeRoom(minGap: 0);
-        room.Racks.Add(MakeRack("K2", 5, 3));
+        room.Racks.Add(MakeRack("K2", 2.5, 1.5));
 
-        Assert.Null(PlacementValidator.Validate(room, MakeRack("K1", 9, 3)));
-        Assert.Equal("Kệ đè lên K2.", PlacementValidator.Validate(room, MakeRack("K1", 8, 3)));
+        Assert.Null(PlacementValidator.Validate(room, MakeRack("K1", 4.5, 1.5)));
+        Assert.Equal("Kệ đè lên K2.", PlacementValidator.Validate(room, MakeRack("K1", 4.4, 1.5)));
     }
 
     [Fact]
-    public void Validate_MinGapRoundsUpToWholeCells()
+    public void Validate_MinGapIsExactMeters_NotRoundedToGrid()
     {
-        // 0,6 m / 0,5 m = 1,2 ô → cần 2 ô trống
+        // 0,6 m: cách 0,6 là đủ, cách 0,5 thì thiếu (trước đây làm tròn lên 2 ô = 1,0 m).
         var room = MakeRoom(minGap: 0.6);
-        room.Racks.Add(MakeRack("K2", 5, 3));
+        room.Racks.Add(MakeRack("K2", 2.5, 1.5));
 
-        Assert.Equal("Thiếu lối đi với K2.", PlacementValidator.Validate(room, MakeRack("K1", 10, 3)));
-        Assert.Null(PlacementValidator.Validate(room, MakeRack("K1", 11, 3)));
+        Assert.Equal("Thiếu lối đi với K2.", PlacementValidator.Validate(room, MakeRack("K1", 5.0, 1.5)));
+        Assert.Null(PlacementValidator.Validate(room, MakeRack("K1", 5.1, 1.5)));
     }
 
     [Fact]
@@ -172,9 +206,9 @@ public class PlacementValidatorTests
     {
         // lối đi chỉ áp dụng giữa kệ với kệ, không áp dụng với tường
         var room = MakeRoom();
-        room.SetCell(9, 3, CellType.Wall);
+        room.AddObstacle(Wall(4.5, 0, 0.2, 5));
 
-        Assert.Null(PlacementValidator.Validate(room, MakeRack("K1", 5, 3)));
+        Assert.Null(PlacementValidator.Validate(room, MakeRack("K1", 2.5, 1.5)));
     }
 
     // ---- kiểm tra lại chính kệ đã có ----
@@ -183,7 +217,7 @@ public class PlacementValidatorTests
     public void Validate_ExistingRackAtSamePlace_DoesNotOverlapItself()
     {
         var room = MakeRoom();
-        var k2 = MakeRack("K2", 5, 3);
+        var k2 = MakeRack("K2", 2.5, 1.5);
         room.Racks.Add(k2);
 
         Assert.Null(PlacementValidator.Validate(room, k2));
@@ -193,19 +227,19 @@ public class PlacementValidatorTests
     public void Validate_MovingExistingRack_IgnoresItsOldPosition()
     {
         var room = MakeRoom();
-        room.Racks.Add(MakeRack("K2", 5, 3));
+        room.Racks.Add(MakeRack("K2", 2.5, 1.5));
 
-        // cùng mã K2 nhưng đã dời sang (6, 3): vẫn chồng lên vị trí cũ, nhưng không tính là đè kệ khác
-        Assert.Null(PlacementValidator.Validate(room, MakeRack("K2", 6, 3)));
+        // cùng mã K2 nhưng dời sang 3,0: vẫn chồng lên vị trí cũ, nhưng không tính là đè kệ khác
+        Assert.Null(PlacementValidator.Validate(room, MakeRack("K2", 3.0, 1.5)));
     }
 
     [Fact]
     public void Validate_SameCodeIgnoresCase()
     {
         var room = MakeRoom();
-        room.Racks.Add(MakeRack("K2", 5, 3));
+        room.Racks.Add(MakeRack("K2", 2.5, 1.5));
 
-        Assert.Null(PlacementValidator.Validate(room, MakeRack("k2", 6, 3)));
+        Assert.Null(PlacementValidator.Validate(room, MakeRack("k2", 3.0, 1.5)));
     }
 
     // ---- không sửa dữ liệu, tham số null ----
@@ -214,13 +248,12 @@ public class PlacementValidatorTests
     public void Validate_DoesNotChangeRoom()
     {
         var room = MakeRoom();
-        room.SetCell(1, 1, CellType.Wall);
-        room.Racks.Add(MakeRack("K2", 5, 3));
-        string cellsBefore = room.Cells;
+        room.AddObstacle(Column(0.5, 0.5));
+        room.Racks.Add(MakeRack("K2", 2.5, 1.5));
 
-        PlacementValidator.Validate(room, MakeRack("K1", 11, 3));
+        PlacementValidator.Validate(room, MakeRack("K1", 5.5, 1.5));
 
-        Assert.Equal(cellsBefore, room.Cells);
+        Assert.Single(room.Obstacles);
         Assert.Single(room.Racks);
     }
 

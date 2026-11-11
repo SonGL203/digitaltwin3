@@ -21,6 +21,41 @@ namespace Warehouse.Api.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Warehouse.Api.Models.Obstacle", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<double>("Depth")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("RoomId")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("Width")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("X")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("Y")
+                        .HasColumnType("double precision");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RoomId");
+
+                    b.ToTable("Obstacles");
+                });
+
             modelBuilder.Entity("Warehouse.Api.Models.Rack", b =>
                 {
                     b.Property<int>("Id")
@@ -64,11 +99,11 @@ namespace Warehouse.Api.Data.Migrations
                     b.Property<int>("Rotation")
                         .HasColumnType("integer");
 
-                    b.Property<int>("X")
-                        .HasColumnType("integer");
+                    b.Property<double>("X")
+                        .HasColumnType("double precision");
 
-                    b.Property<int>("Y")
-                        .HasColumnType("integer");
+                    b.Property<double>("Y")
+                        .HasColumnType("double precision");
 
                     b.HasKey("Id");
 
@@ -86,15 +121,11 @@ namespace Warehouse.Api.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<double>("CellSize")
+                    b.Property<double>("Depth")
                         .HasColumnType("double precision");
 
-                    b.Property<string>("Cells")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("Cols")
-                        .HasColumnType("integer");
+                    b.Property<double>("GridSize")
+                        .HasColumnType("double precision");
 
                     b.Property<double>("Margin")
                         .HasColumnType("double precision");
@@ -102,8 +133,8 @@ namespace Warehouse.Api.Data.Migrations
                     b.Property<double>("MinGap")
                         .HasColumnType("double precision");
 
-                    b.Property<int>("Rows")
-                        .HasColumnType("integer");
+                    b.Property<double>("Width")
+                        .HasColumnType("double precision");
 
                     b.HasKey("Id");
 
@@ -152,6 +183,15 @@ namespace Warehouse.Api.Data.Migrations
                     b.ToTable("Slots");
                 });
 
+            modelBuilder.Entity("Warehouse.Api.Models.Obstacle", b =>
+                {
+                    b.HasOne("Warehouse.Api.Models.Room", null)
+                        .WithMany("Obstacles")
+                        .HasForeignKey("RoomId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Warehouse.Api.Models.Rack", b =>
                 {
                     b.HasOne("Warehouse.Api.Models.Room", null)
@@ -172,6 +212,8 @@ namespace Warehouse.Api.Data.Migrations
 
             modelBuilder.Entity("Warehouse.Api.Models.Room", b =>
                 {
+                    b.Navigation("Obstacles");
+
                     b.Navigation("Racks");
                 });
 #pragma warning restore 612, 618

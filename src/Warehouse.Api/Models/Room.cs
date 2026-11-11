@@ -1,93 +1,62 @@
 namespace Warehouse.Api.Models;
+
+/// <summary>
+/// Phòng kho, mọi kích thước bằng mét. GridSize chỉ là bước "hít" khi kéo kệ trên giao diện (giống grid của Unity):
+/// đổi GridSize không làm kệ, tường hay cột nào di chuyển hay đổi kích thước.
+/// </summary>
 public class Room
 {
-    public const char EmptyCell = '.';
-    public const char WallCell = '#';
-    public const char ObstacleCell = 'O';
-
     public int Id { get; private set; }
-    public int Cols { get; private set; }
-    public int Rows { get; private set; }
-    public double CellSize { get; private set; }
-    public string Cells { get; private set; }
+    /// <summary>Chiều dài theo trục X (m).</summary>
+    public double Width { get; private set; }
+    /// <summary>Chiều rộng theo trục Y (m).</summary>
+    public double Depth { get; private set; }
+    /// <summary>Bước lưới để snap trên giao diện (m). Server không ép kệ phải nằm đúng lưới.</summary>
+    public double GridSize { get; private set; }
     public double MinGap { get; private set; }
     public double Margin { get; private set; }
 
     public List<Rack> Racks { get; } = new();
+    public List<Obstacle> Obstacles { get; } = new();
 
-    public Room(int cols, int rows, double cellSize, double minGap, double margin, string? cells = null)
+    public Room(double width, double depth, double gridSize, double minGap, double margin)
     {
-        if (cols <= 0)
-            throw new ArgumentException("Số cột phải lớn hơn 0.", nameof(cols));
-        if (rows <= 0)
-            throw new ArgumentException("Số hàng phải lớn hơn 0.", nameof(rows));
-        if (cellSize <= 0)
-            throw new ArgumentException("Cạnh ô lưới phải lớn hơn 0.", nameof(cellSize));
+        if (width <= 0)
+            throw new ArgumentException("Chiều dài phòng phải lớn hơn 0.", nameof(width));
+        if (depth <= 0)
+            throw new ArgumentException("Chiều rộng phòng phải lớn hơn 0.", nameof(depth));
         if (minGap < 0)
             throw new ArgumentException("Lối đi tối thiểu không được âm.", nameof(minGap));
         if (margin < 0)
             throw new ArgumentException("Khoảng hở không được âm.", nameof(margin));
 
-        cells ??= new string(EmptyCell, cols * rows);
-        if (cells.Length != cols * rows)
-            throw new ArgumentException("Độ dài Cells phải bằng Cols × Rows.", nameof(cells));
-        if (cells.Any(c => c != EmptyCell && c != WallCell && c != ObstacleCell))
-            throw new ArgumentException("Cells chỉ được chứa '.', '#' hoặc 'O'.", nameof(cells));
-
-        Cols = cols;
-        Rows = rows;
-        CellSize = cellSize;
+        Width = width;
+        Depth = depth;
         MinGap = minGap;
         Margin = margin;
-        Cells = cells;
+        SetGridSize(gridSize);
     }
 
-    /// <summary>Chiều rộng thật của phòng theo trục X (m).</summary>
-    public double WidthMeters => Cols * CellSize;
+    /// <summary>Sàn phòng: hình chữ nhật từ (0, 0). Kệ và vật cản phải nằm gọn trong đây.</summary>
+    public Rect Bounds => new(0, 0, Width, Depth);
 
-    /// <summary>Chiều sâu thật của phòng theo trục Y của lưới (m).</summary>
-    public double DepthMeters => Rows * CellSize;
-
-    /// <summary>Ô (x, y) có nằm trong lưới không. x là cột, y là hàng, đều đếm từ 0.</summary>
-    public bool IsInside(int x, int y) => x >= 0 && x < Cols && y >= 0 && y < Rows;
+    /// <summary>Đổi bước lưới. Lúc nào cũng được, vì không có gì lưu theo ô.</summary>
+    public void SetGridSize(double gridSize)
+    {
+        if (gridSize <= 0)
+            throw new ArgumentException("Bước lưới phải lớn hơn 0.", nameof(gridSize));
+        GridSize = gridSize;
+    }
 
     /// <summary>
-    /// Loại của ô (x, y). Ném lỗi nếu ngoài lưới, để nơi gọi phải kiểm tra IsInside trước thay vì đọc nhầm ô khác.
+    /// Thêm tường/cột. Chỉ chặn vật cản nằm ngoài phòng (luật của riêng phòng).
+    /// Không chặn vật cản đè lên kệ đang có: cần biết cả kệ lẫn vật cản nên để service lo, giống trước đây.
     /// </summary>
-    public CellType CellAt(int x, int y) => FromChar(Cells[IndexOf(x, y)]);
-
-    /// <summary>Đặt loại cho ô (x, y): vẽ hoặc xoá tường, vật cản. Chỉ ô đó đổi, độ dài Cells giữ nguyên.</summary>
-    public void SetCell(int x, int y, CellType type)
+    public void AddObstacle(Obstacle obstacle)
     {
-        int index = IndexOf(x, y);
-        var chars = Cells.ToCharArray();
-        chars[index] = ToChar(type);
-        Cells = new string(chars);
+        ArgumentNullException.ThrowIfNull(obstacle);
+        if (!obstacle.Bounds.IsInside(Bounds))
+            throw new ArgumentException("Vật cản nằm ngoài phòng.", nameof(obstacle));
+        Obstacles.Add(obstacle);
     }
-
-    /// <summary>Ô là tường hoặc vật cản (kệ không được đè). Ném lỗi nếu ô ngoài lưới.</summary>
-    public bool IsBlocked(int x, int y) => CellAt(x, y) != CellType.Empty;
-
-    // Vị trí của ô (x, y) trong chuỗi Cells: hàng nhân số cột, cộng cột. Chỗ duy nhất tính công thức này.
-    private int IndexOf(int x, int y)
-    {
-        if (!IsInside(x, y))
-            throw new ArgumentException($"Ô ({x}, {y}) nằm ngoài phòng {Cols} × {Rows}.");
-
-        return y * Cols + x;
-    }
-
-    private static CellType FromChar(char c) => c switch
-    {
-        WallCell => CellType.Wall,
-        ObstacleCell => CellType.Obstacle,
-        _ => CellType.Empty,
-    };
-
-    private static char ToChar(CellType type) => type switch
-    {
-        CellType.Wall => WallCell,
-        CellType.Obstacle => ObstacleCell,
-        _ => EmptyCell,
-    };
 }

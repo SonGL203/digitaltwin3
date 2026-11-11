@@ -18,6 +18,7 @@ public class EfWarehouseStore(WarehouseDbContext db) : IWarehouseStore
         // giữa các lần đọc, giống store RAM (thứ tự thêm vào); Allocator duyệt theo thứ tự này.
         => db.Rooms
              .Include(r => r.Racks.OrderBy(k => k.Id))
+             .Include(r => r.Obstacles.OrderBy(o => o.Id))
              .OrderBy(r => r.Id)
              .FirstOrDefault();
 

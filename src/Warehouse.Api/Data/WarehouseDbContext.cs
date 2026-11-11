@@ -8,16 +8,18 @@ using Warehouse.Api.Models;
 /// ([Key], [Table]…) trên Models, để Models không phụ thuộc EF (luật tầng, CLAUDE.md mục 2).
 ///
 /// Models có setter private và constructor có tham số. EF Core tự gọi constructor đó khi đọc từ DB
-/// ("constructor binding") vì tên tham số trùng tên thuộc tính (cols ↔ Cols, rackId ↔ RackId…);
+/// ("constructor binding") vì tên tham số trùng tên thuộc tính (width ↔ Width, rackId ↔ RackId…);
 /// các thuộc tính không có trong constructor (Id, AssignedSize, PalletId) EF gán qua setter private.
 /// Nên không cần thêm constructor rỗng vào Models.
+/// Thuộc tính chỉ tính ra (Room.Bounds, Obstacle.Bounds) không có setter nên EF bỏ qua, không thành cột.
 ///
-/// Hiện mới map phần mặt bằng (Room, Rack, Slot), khớp với IWarehouseStore. Pallet, lô, type thêm ở ngày 3.
+/// Hiện mới map phần mặt bằng (Room, Rack, Obstacle, Slot), khớp với IWarehouseStore. Pallet, lô, type thêm ở ngày 3.
 /// </summary>
 public class WarehouseDbContext(DbContextOptions<WarehouseDbContext> options) : DbContext(options)
 {
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<Rack> Racks => Set<Rack>();
+    public DbSet<Obstacle> Obstacles => Set<Obstacle>();
     public DbSet<Slot> Slots => Set<Slot>();
 
     protected override void OnModelCreating(ModelBuilder model)
@@ -25,7 +27,7 @@ public class WarehouseDbContext(DbContextOptions<WarehouseDbContext> options) : 
         model.Entity<Room>(room =>
         {
             room.HasKey(r => r.Id);
-            room.Property(r => r.Cells).IsRequired();
+            // Width, Depth, GridSize, MinGap, Margin (m): EF tự map double → double precision.
 
             // Room.Racks chỉ có getter ({ get; } = new()); EF dùng field ẩn phía sau để nạp danh sách.
             // Rack không có thuộc tính trỏ ngược về Room, chỉ có RoomId, nên WithOne() để trống.
@@ -34,6 +36,20 @@ public class WarehouseDbContext(DbContextOptions<WarehouseDbContext> options) : 
                 .WithOne()
                 .HasForeignKey(k => k.RoomId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // Tường/cột thuộc phòng giống kệ.
+            room.HasMany(r => r.Obstacles)
+                .WithOne()
+                .HasForeignKey(o => o.RoomId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<Obstacle>(obstacle =>
+        {
+            obstacle.HasKey(o => o.Id);
+            // Lưu "Wall"/"Column" thay vì 0/1: đọc bảng là hiểu ngay,
+            // và chèn thêm loại mới vào enum sau này không làm lệch dữ liệu cũ.
+            obstacle.Property(o => o.Kind).HasConversion<string>().HasMaxLength(20);
         });
 
         model.Entity<Rack>(rack =>
@@ -58,7 +74,7 @@ public class WarehouseDbContext(DbContextOptions<WarehouseDbContext> options) : 
                 .HasForeignKey(s => s.RackId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            // Mã khung (K1-T1-R1) duy nhất vì mã kệ đã duy nhất.
+            // Mã khung (K1-T1-R1) duy nhất toàn DB: chỉ đúng khi có một phòng; nhiều phòng thì đổi thành (RackId, Code).
             slot.HasIndex(s => s.Code).IsUnique();
 
             // PalletId chưa có khoá ngoại vì bảng Pallet chưa map; thêm ở ngày 3.

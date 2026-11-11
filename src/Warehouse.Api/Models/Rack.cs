@@ -4,8 +4,9 @@ public class Rack
     public int Id { get; private set; }
     public int RoomId { get; private set; }
     public string Code { get; private set; }
-    public int X { get; private set; }
-    public int Y { get; private set; }
+    /// <summary>Góc trên trái của kệ trên sàn (m).</summary>
+    public double X { get; private set; }
+    public double Y { get; private set; }
     public int Rotation { get; private set; }
     public int Levels { get; private set; }
     public double LevelHeight { get; private set; }
@@ -17,7 +18,7 @@ public class Rack
 
     public int? ProductTypeId { get; private set; }
 
-    public Rack(int roomId, string code, int x, int y, int rotation,
+    public Rack(int roomId, string code, double x, double y, int rotation,
                 int levels, double levelHeight, int bays, double bayWidth, double depth,
                 bool hasTop, double maxWeight, int? productTypeId = null)
     {
@@ -81,26 +82,15 @@ public class Rack
     }
 
     /// <summary>
-    /// Kệ chiếm bao nhiêu ô lưới. Dài = Bays × BayWidth, sâu = Depth, mỗi chiều đổi ra ô rồi làm tròn LÊN
-    /// (kệ phải nằm gọn trong các ô nó chiếm; làm tròn xuống thì phần kệ thò ra ngoài ô có thể đè tường mà không bị phát hiện).
-    /// Rotation 0: dài theo trục X (chiếm Cols = ô dài, Rows = ô sâu). Rotation 90: đổi chỗ hai số.
-    /// Nhận cellSize làm tham số vì kệ không biết cạnh ô lưới, chỉ Room biết.
+    /// Hình chữ nhật kệ chiếm trên sàn (m). Dài = Bays × BayWidth, sâu = Depth.
+    /// Rotation 0: dài theo trục X. Rotation 90: dài theo trục Y (đổi chỗ hai cạnh).
+    /// Không còn làm tròn ra ô nên không còn lỗi kiểu 11,000000000000002 ô.
     /// </summary>
-    public Footprint GetFootprint(double cellSize)
+    public Rect GetBounds()
     {
-        if (cellSize <= 0)
-            throw new ArgumentException("Cạnh ô lưới phải lớn hơn 0.", nameof(cellSize));
-
-        int lengthCells = CellsFor(Bays * BayWidth, cellSize);
-        int depthCells = CellsFor(Depth, cellSize);
-
+        var length = Bays * BayWidth;
         return Rotation == 90
-            ? new Footprint(depthCells, lengthCells)
-            : new Footprint(lengthCells, depthCells);
+            ? new Rect(X, Y, Depth, length)
+            : new Rect(X, Y, length, Depth);
     }
-
-    // Trừ Epsilon trước khi làm tròn lên: phép chia số thực có thể ra 11,000000000000002 thay vì 11,
-    // và làm tròn lên sẽ thành 12 ô. Tối thiểu 1 ô vì kệ nhỏ hơn một ô vẫn chiếm ô đó.
-    private static int CellsFor(double meters, double cellSize)
-        => Math.Max(1, (int)Math.Ceiling(meters / cellSize - Tolerance.Epsilon));
 }

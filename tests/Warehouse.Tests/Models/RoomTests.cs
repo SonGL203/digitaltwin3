@@ -5,52 +5,90 @@ namespace Warehouse.Tests.Models;
 public class RoomTests
 {
     [Fact]
-    public void Constructor_WithoutCells_FillsEmptyCells()
+    public void Constructor_KeepsSizesInMetersAndStartsEmpty()
     {
-        var room = new Room(4, 3, 0.5, 1.0, 0.05);
+        var room = new Room(20, 12, 0.5, 1.0, 0.05);
 
-        Assert.Equal(new string('.', 12), room.Cells);
+        Assert.Equal(20, room.Width);
+        Assert.Equal(12, room.Depth);
+        Assert.Equal(0.5, room.GridSize);
+        Assert.Equal(new Rect(0, 0, 20, 12), room.Bounds);
         Assert.Empty(room.Racks);
-    }
-
-    [Fact]
-    public void Constructor_WithCells_KeepsCells()
-    {
-        var room = new Room(2, 2, 0.5, 1.0, 0.05, "#.O.");
-
-        Assert.Equal("#.O.", room.Cells);
+        Assert.Empty(room.Obstacles);
     }
 
     [Theory]
-    [InlineData(0, 3, 0.5, 1.0, 0.05, "cols")]
-    [InlineData(4, 0, 0.5, 1.0, 0.05, "rows")]
-    [InlineData(4, 3, 0, 1.0, 0.05, "cellSize")]
-    [InlineData(4, 3, 0.5, -1, 0.05, "minGap")]
-    [InlineData(4, 3, 0.5, 1.0, -0.01, "margin")]
+    [InlineData(0, 12, 0.5, 1.0, 0.05, "width")]
+    [InlineData(20, 0, 0.5, 1.0, 0.05, "depth")]
+    [InlineData(20, 12, 0, 1.0, 0.05, "gridSize")]
+    [InlineData(20, 12, 0.5, -1, 0.05, "minGap")]
+    [InlineData(20, 12, 0.5, 1.0, -0.01, "margin")]
     public void Constructor_InvalidNumber_Throws(
-        int cols, int rows, double cellSize, double minGap, double margin, string badParam)
+        double width, double depth, double gridSize, double minGap, double margin, string badParam)
     {
         var ex = Assert.Throws<ArgumentException>(
-            () => new Room(cols, rows, cellSize, minGap, margin));
+            () => new Room(width, depth, gridSize, minGap, margin));
 
         Assert.Equal(badParam, ex.ParamName);
     }
 
     [Fact]
-    public void Constructor_CellsWrongLength_Throws()
+    public void SetGridSize_DoesNotMoveRacks()
     {
-        var ex = Assert.Throws<ArgumentException>(
-            () => new Room(4, 3, 0.5, 1.0, 0.05, "...."));
+        // Grid chỉ để snap: đổi grid thì kệ vẫn nằm đúng chỗ, đúng kích thước.
+        var room = new Room(20, 12, 0.5, 1.0, 0.05);
+        var rack = new Rack(1, "K1", 7.0, 2.0, 0, 3, 1.2, 4, 1.2, 1.0, true, 1000);
+        room.Racks.Add(rack);
+        var before = rack.GetBounds();
 
-        Assert.Equal("cells", ex.ParamName);
+        room.SetGridSize(1.0);
+
+        Assert.Equal(1.0, room.GridSize);
+        Assert.Equal(before, rack.GetBounds());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-0.5)]
+    public void SetGridSize_NotPositive_Throws(double gridSize)
+    {
+        var room = new Room(20, 12, 0.5, 1.0, 0.05);
+
+        var ex = Assert.Throws<ArgumentException>(() => room.SetGridSize(gridSize));
+
+        Assert.Equal("gridSize", ex.ParamName);
     }
 
     [Fact]
-    public void Constructor_CellsInvalidCharacter_Throws()
+    public void AddObstacle_Inside_IsAdded()
     {
-        var ex = Assert.Throws<ArgumentException>(
-            () => new Room(2, 2, 0.5, 1.0, 0.05, "..x."));
+        var room = new Room(20, 12, 0.5, 1.0, 0.05);
 
-        Assert.Equal("cells", ex.ParamName);
+        room.AddObstacle(new Obstacle(1, ObstacleKind.Column, 6.5, 8, 0.4, 0.4));
+
+        Assert.Single(room.Obstacles);
+    }
+
+    [Fact]
+    public void AddObstacle_TouchingRoomEdge_IsAllowed()
+    {
+        // Tường ngăn chạy sát tới mép phòng: 19,8 + 0,2 = 20 đúng bằng chiều dài phòng.
+        var room = new Room(20, 12, 0.5, 1.0, 0.05);
+
+        room.AddObstacle(new Obstacle(1, ObstacleKind.Wall, 19.8, 0, 0.2, 6));
+
+        Assert.Single(room.Obstacles);
+    }
+
+    [Fact]
+    public void AddObstacle_StickingOutOfRoom_Throws()
+    {
+        var room = new Room(20, 12, 0.5, 1.0, 0.05);
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => room.AddObstacle(new Obstacle(1, ObstacleKind.Column, 19.8, 5, 0.4, 0.4)));
+
+        Assert.Equal("obstacle", ex.ParamName);
+        Assert.Empty(room.Obstacles);
     }
 }
