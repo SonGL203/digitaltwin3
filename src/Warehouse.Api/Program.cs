@@ -1,11 +1,24 @@
+using Microsoft.EntityFrameworkCore;
+using Warehouse.Api.Data;
+using Warehouse.Api.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
-// Nối dây interface → lớp thật đặt ở đây, ví dụ:
-// builder.Services.AddSingleton<IWarehouseStore, InMemoryWarehouseStore>();
-// builder.Services.AddScoped<IPalletService, PalletService>();
+// Nối dây interface → lớp thật (chỗ duy nhất).
+// Chuỗi kết nối PostgreSQL đọc từ "ConnectionStrings:Warehouse": máy dev để trong dotnet user-secrets
+// (ngoài repo, không lên git), máy khác đặt biến môi trường ConnectionStrings__Warehouse.
+// Đọc bên trong lambda nên chỉ báo lỗi khi thật sự cần DB, test không đụng DB (ví dụ /api/health) vẫn chạy.
+builder.Services.AddDbContext<WarehouseDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Warehouse")
+        ?? throw new InvalidOperationException(
+            "Thiếu chuỗi kết nối ConnectionStrings:Warehouse (đặt bằng dotnet user-secrets).")));
+
+// Store Scoped theo DbContext (mỗi request một DbContext). InMemoryWarehouseStore vẫn giữ làm kho giả cho test.
+builder.Services.AddScoped<IWarehouseStore, EfWarehouseStore>();
+builder.Services.AddScoped<ILayoutService, LayoutService>();
 
 var app = builder.Build();
 
