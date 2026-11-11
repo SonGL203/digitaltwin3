@@ -13,14 +13,20 @@ using Warehouse.Api.Models;
 /// </summary>
 public class EfWarehouseStore(WarehouseDbContext db) : IWarehouseStore
 {
-    public Room? GetRoom()
-        // Include nạp luôn danh sách kệ (không thì Racks rỗng). Sắp theo Id để thứ tự kệ ổn định
-        // giữa các lần đọc, giống store RAM (thứ tự thêm vào); Allocator duyệt theo thứ tự này.
+    public IReadOnlyList<Room> GetRooms()
+        => RoomsWithChildren().OrderBy(r => r.Id).ToList();
+
+    public Room? GetRoom(int id)
+        => RoomsWithChildren().FirstOrDefault(r => r.Id == id);
+
+    // Include nạp luôn kệ và vật cản (không thì hai danh sách rỗng). Sắp theo Id để thứ tự kệ ổn định
+    // giữa các lần đọc, giống store RAM (thứ tự thêm vào); Allocator duyệt theo thứ tự này.
+    // AsSplitQuery: hai Include trong một câu SQL sẽ nhân chéo kệ × vật cản; tách thành từng câu cho gọn.
+    private IQueryable<Room> RoomsWithChildren()
         => db.Rooms
              .Include(r => r.Racks.OrderBy(k => k.Id))
              .Include(r => r.Obstacles.OrderBy(o => o.Id))
-             .OrderBy(r => r.Id)
-             .FirstOrDefault();
+             .AsSplitQuery();
 
     public void SaveRoom(Room room)
     {

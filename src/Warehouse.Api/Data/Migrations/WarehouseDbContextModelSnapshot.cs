@@ -133,10 +133,18 @@ namespace Warehouse.Api.Data.Migrations
                     b.Property<double>("MinGap")
                         .HasColumnType("double precision");
 
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<double>("Width")
                         .HasColumnType("double precision");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
 
                     b.ToTable("Rooms");
                 });
@@ -175,10 +183,8 @@ namespace Warehouse.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Code")
+                    b.HasIndex("RackId", "Code")
                         .IsUnique();
-
-                    b.HasIndex("RackId");
 
                     b.ToTable("Slots");
                 });

@@ -5,7 +5,7 @@ namespace Warehouse.Tests.Data;
 
 public class InMemoryWarehouseStoreTests
 {
-    private static Room MakeRoom() => new(20, 10, 0.5, 1.0, 0.05);
+    private static Room MakeRoom() => new("Kho A", 20, 10, 0.5, 1.0, 0.05);
 
     private static Rack MakeRack(string code, int x = 0, int y = 0)
         => new(1, code, x, y, 0, 2, 1.3, 2, 1.0, 1.0, false, 1000);
@@ -15,7 +15,23 @@ public class InMemoryWarehouseStoreTests
     [Fact]
     public void GetRoom_NothingSaved_ReturnsNull()
     {
-        Assert.Null(new InMemoryWarehouseStore().GetRoom());
+        Assert.Null(new InMemoryWarehouseStore().GetRoom(1));
+        Assert.Empty(new InMemoryWarehouseStore().GetRooms());
+    }
+
+    [Fact]
+    public void SaveRoom_TwoNewRooms_BothListedWithDifferentIds()
+    {
+        var store = new InMemoryWarehouseStore();
+        var a = new Room("Kho A", 20, 10, 0.5, 1.0, 0.05);
+        var b = new Room("Kho B", 10, 8, 0.5, 1.0, 0.05);
+
+        store.SaveRoom(a);
+        store.SaveRoom(b);
+
+        Assert.NotEqual(a.Id, b.Id);
+        Assert.Equal(new[] { "Kho A", "Kho B" }, store.GetRooms().Select(r => r.Name));
+        Assert.Same(b, store.GetRoom(b.Id));
     }
 
     [Fact]
@@ -41,7 +57,7 @@ public class InMemoryWarehouseStoreTests
         room.Racks.Add(MakeRack("K1"));
         store.SaveRoom(room);
 
-        var loaded = store.GetRoom();
+        var loaded = store.GetRoom(room.Id);
 
         Assert.NotNull(loaded);
         Assert.Equal(room.Id, loaded!.Id);

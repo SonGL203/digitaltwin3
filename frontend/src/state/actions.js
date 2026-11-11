@@ -9,6 +9,9 @@ const VALIDATE_DELAY_MS = 120;   // chờ chuột dừng một chút rồi mới
 
 // ---------- tiện ích ----------
 
+/** Phòng đang mở: mọi API mặt bằng đều nằm dưới /rooms/{roomId}. */
+const roomId = () => getState().currentRoomId;
+
 /** Đổi kệ server trả về thành RackRequest để gửi lại (PUT, validate). */
 export function rackToRequest(r) {
   return {
@@ -64,7 +67,7 @@ export function previewRack(request, { rackId = null, source, footprint = null }
   const seq = ++validateSeq;
   validateTimer = setTimeout(async () => {
     try {
-      const check = await api.validateRack(request);
+      const check = await api.validateRack(roomId(), request);
       if (seq !== validateSeq) return;
       setState({
         preview: {
@@ -111,31 +114,43 @@ async function run(action, success) {
 }
 
 export const moveRack = (rack, x, y, rotation) =>
-  run(() => api.updateRack(rack.id, { ...rackToRequest(rack), x, y, rotation }), `Đã dời ${rack.code}.`);
+  run(() => api.updateRack(roomId(), rack.id, { ...rackToRequest(rack), x, y, rotation }), `Đã dời ${rack.code}.`);
 
 export const rotateRack = (rack) =>
-  run(() => api.updateRack(rack.id, { ...rackToRequest(rack), rotation: rack.rotation === 90 ? 0 : 90 }),
+  run(() => api.updateRack(roomId(), rack.id, { ...rackToRequest(rack), rotation: rack.rotation === 90 ? 0 : 90 }),
     `Đã xoay ${rack.code}.`);
 
 export const saveRack = (rack, request) =>
-  run(() => api.updateRack(rack.id, request), (r) => `Đã lưu ${rack.code}: ${r.slotCount} khung.`);
+  run(() => api.updateRack(roomId(), rack.id, request), (r) => `Đã lưu ${rack.code}: ${r.slotCount} khung.`);
 
 export async function addRack(request) {
-  const created = await run(() => api.addRack(request), (r) => `Đã đặt kệ ${r.code}.`);
+  const created = await run(() => api.addRack(roomId(), request), (r) => `Đã đặt kệ ${r.code}.`);
   if (created) setState({ selectedRackId: created.id, selectedObstacleId: null });
   return created;
 }
 
-export const saveRoom = (room) => run(() => api.updateRoom(room), 'Đã lưu phòng.');
+export const saveRoom = (room) => run(() => api.updateRoom(roomId(), room), 'Đã lưu phòng.');
 
 export async function addObstacle(obstacle) {
-  const created = await run(() => api.addObstacle(obstacle),
+  const created = await run(() => api.addObstacle(roomId(), obstacle),
     obstacle.kind === 'Wall' ? 'Đã thêm tường.' : 'Đã thêm cột.');
   if (created) setState({ selectedObstacleId: created.id, selectedRackId: null });
   return created;
 }
 
-export async function removeObstacle(id) {
-  const removed = await run(() => api.removeObstacle(id), 'Đã xoá vật cản.');
+// Xoá không hoàn tác được: luôn hỏi lại trước. confirm() có sẵn trong trình duyệt, đủ cho đồ án;
+// trả false (bấm Huỷ) thì không gửi gì lên server.
+
+export async function removeObstacle(obstacle) {
+  const what = obstacle.kind === 'Wall' ? 'tường' : 'cột';
+  if (!confirm(`Xoá ${what} tại (${obstacle.x}; ${obstacle.y}) m?`)) return;
+  const removed = await run(() => api.removeObstacle(roomId(), obstacle.id), `Đã xoá ${what}.`);
   if (removed) setState({ selectedObstacleId: null });
+}
+
+export async function removeRack(rack) {
+  if (!confirm(`Xoá kệ ${rack.code} và ${rack.slotCount} khung của nó? Không hoàn tác được.`)) return;
+  clearPreview();
+  const removed = await run(() => api.removeRack(roomId(), rack.id), `Đã xoá kệ ${rack.code}.`);
+  if (removed) setState({ selectedRackId: null });
 }

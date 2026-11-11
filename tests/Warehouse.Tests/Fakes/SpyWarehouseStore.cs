@@ -15,7 +15,8 @@ public class SpyWarehouseStore : IWarehouseStore
     /// <summary>Mỗi lần ghi một dòng, ví dụ "SaveRoom (trong transaction)".</summary>
     public List<string> Writes { get; } = new();
 
-    public Room? GetRoom() => _inner.GetRoom();
+    public IReadOnlyList<Room> GetRooms() => _inner.GetRooms();
+    public Room? GetRoom(int id) => _inner.GetRoom(id);
     public IReadOnlyList<Slot> GetAllSlots() => _inner.GetAllSlots();
     public IReadOnlyList<Slot> GetSlotsOfRack(int rackId) => _inner.GetSlotsOfRack(rackId);
 

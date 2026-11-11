@@ -1,5 +1,5 @@
 {
-  "room": { "width": 20, "depth": 12, "gridSize": 0.5, "minGap": 1.0, "margin": 0.05 },
+  "room": { "name": "Kho mẫu", "width": 20, "depth": 12, "gridSize": 0.5, "minGap": 1.0, "margin": 0.05 },
   "obstacles": [
     { "kind": "Column", "x": 6.3,  "y": 7.5,  "width": 0.4, "depth": 0.4 },
     { "kind": "Column", "x": 12.3, "y": 7.5,  "width": 0.4, "depth": 0.4 },

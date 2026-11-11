@@ -1,8 +1,8 @@
 import {
-  addObstacle, addRack, clearPreview, moveRack, nextRackCode, previewRack, rackToRequest, rotateRack, snap,
-  stopPreviewCheck,
+  addObstacle, addRack, clearPreview, moveRack, nextRackCode, previewRack, rackToRequest, removeObstacle, removeRack,
+  rotateRack, snap, stopPreviewCheck,
 } from '../state/actions.js';
-import { getState, selectedRack, setState, showMessage, subscribe } from '../state/store.js';
+import { getState, selectedObstacle, selectedRack, setState, showMessage, subscribe } from '../state/store.js';
 import { formatMeters } from '../ui/format.js';
 
 // Editor 2D: vẽ mặt bằng nhìn từ trên xuống bằng <canvas> và các công cụ chuột.
@@ -446,6 +446,13 @@ export function createEditor2d(container, toolbar, { onCursor } = {}) {
     // Đang gõ trong ô nhập (bảng bên) thì phím R là chữ R, không phải lệnh xoay.
     if (e.target.closest?.('input, select, textarea') || getState().step !== 'layout') return;
 
+    // Delete (hoặc Backspace trên máy Mac): xoá kệ / vật cản đang chọn, có hỏi lại.
+    if ((e.key === 'Delete' || e.key === 'Backspace') && getState().tool === 'select' && !gesture) {
+      if (selectedRack()) removeRack(selectedRack());
+      else if (selectedObstacle()) removeObstacle(selectedObstacle());
+      return;
+    }
+
     if (e.key === 'Escape') {
       gesture = null;
       lastAddPos = null;
@@ -520,7 +527,7 @@ export function createEditor2d(container, toolbar, { onCursor } = {}) {
   }
 
   const HINTS = {
-    select: 'Kéo kệ để dời · R xoay kệ đang chọn',
+    select: 'Kéo kệ để dời · R xoay · Delete xoá kệ/cột đang chọn',
     'add-rack': 'Bấm để đặt · R xoay · Esc huỷ',
     'add-column': 'Bấm để đặt cột · Esc huỷ',
   };
@@ -542,7 +549,8 @@ export function createEditor2d(container, toolbar, { onCursor } = {}) {
     canvas.height = Math.round(size.height * dpr);
     canvas.style.width = `${size.width}px`;
     canvas.style.height = `${size.height}px`;
-    if (fittedRoomKey === null) fitIfNewRoom(getState());
+    // Mở phòng khác lúc editor đang ẩn (kích thước 0) thì chưa "vừa khung" được; làm bù khi editor hiện lại.
+    fitIfNewRoom(getState());
     draw();
   }
 

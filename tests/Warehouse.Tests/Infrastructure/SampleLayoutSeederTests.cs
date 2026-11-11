@@ -20,7 +20,8 @@ public class SampleLayoutSeederTests
 
         SampleLayoutSeeder.Seed(layout, NullLogger.Instance, SamplePath);
 
-        var room = store.GetRoom()!;
+        var room = store.GetRooms().Single();
+        Assert.Equal("Kho mẫu", room.Name);
         Assert.Equal(20, room.Width);
         Assert.Equal(12, room.Depth);
         Assert.Equal(5, room.Obstacles.Count);
@@ -38,7 +39,7 @@ public class SampleLayoutSeederTests
 
         SampleLayoutSeeder.Seed(layout, NullLogger.Instance, SamplePath);
 
-        Assert.Equal(8, store.GetRoom()!.Racks.Count);
+        Assert.Equal(8, store.GetRooms().Single().Racks.Count);
         Assert.Equal(108, store.GetAllSlots().Count);
     }
 }

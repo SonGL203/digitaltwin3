@@ -39,17 +39,22 @@ async function request(method, path, body) {
 export const api = {
   health: () => request('GET', '/health'),
 
-  // ---- mặt bằng (mọi số đo bằng mét) ----
-  /** Phòng + kệ (có footprintWidth/footprintDepth, slotCount) + tường/cột. 404 nếu chưa có phòng. */
-  getLayout: () => request('GET', '/layout'),
-  createRoom: (room) => request('POST', '/layout/room', room),
-  updateRoom: (room) => request('PUT', '/layout/room', room),
+  // ---- phòng và mặt bằng (mọi số đo bằng mét). Kệ, tường, cột đều nằm dưới /rooms/{roomId} ----
+  /** Danh sách phòng: { id, name, width, depth, gridSize, rackCount, obstacleCount, slotCount }. */
+  listRooms: () => request('GET', '/rooms'),
+  /** Tạo phòng → { id }. Tên trùng thì 409. */
+  createRoom: (room) => request('POST', '/rooms', room),
+  /** Một phòng + kệ (có footprintWidth/footprintDepth, slotCount) + tường/cột. 404 nếu không có. */
+  getRoom: (roomId) => request('GET', `/rooms/${roomId}`),
+  updateRoom: (roomId, room) => request('PUT', `/rooms/${roomId}`, room),
 
-  addObstacle: (obstacle) => request('POST', '/layout/obstacles', obstacle),
-  removeObstacle: (id) => request('DELETE', `/layout/obstacles/${id}`),
+  addObstacle: (roomId, obstacle) => request('POST', `/rooms/${roomId}/obstacles`, obstacle),
+  removeObstacle: (roomId, id) => request('DELETE', `/rooms/${roomId}/obstacles/${id}`),
 
   /** Kiểm tra thử (bóng mờ): luôn 200 nếu có phòng, xem isValid và reason. Không lưu gì. */
-  validateRack: (rack) => request('POST', '/layout/racks/validate', rack),
-  addRack: (rack) => request('POST', '/layout/racks', rack),
-  updateRack: (id, rack) => request('PUT', `/layout/racks/${id}`, rack),
+  validateRack: (roomId, rack) => request('POST', `/rooms/${roomId}/racks/validate`, rack),
+  addRack: (roomId, rack) => request('POST', `/rooms/${roomId}/racks`, rack),
+  updateRack: (roomId, id, rack) => request('PUT', `/rooms/${roomId}/racks/${id}`, rack),
+  /** Xoá kệ và mọi khung của nó. Kệ đang có hàng thì 409. */
+  removeRack: (roomId, id) => request('DELETE', `/rooms/${roomId}/racks/${id}`),
 };

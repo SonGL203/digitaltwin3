@@ -7,9 +7,11 @@ using Warehouse.Api.Models;
 // [Range]/[Required] chặn giá trị vô lý ngay ở cửa API; Models vẫn tự chặn lần nữa (ArgumentException).
 // Giới hạn trên chỉ để chặn gõ nhầm, không phải luật nghiệp vụ. Mọi kích thước, toạ độ bằng mét.
 
-/// <summary>Tạo phòng trống bằng kích thước thật. Tường, cột thêm sau.</summary>
+/// <summary>Tạo hoặc sửa phòng bằng kích thước thật. Tường, cột thêm sau.</summary>
 public class RoomRequest
 {
+    /// <summary>Tên phòng, không trùng phòng khác (không phân biệt hoa thường).</summary>
+    [Required, StringLength(50)] public string Name { get; set; } = "";
     /// <summary>Chiều dài theo trục X (m).</summary>
     [Range(0.5, 500)] public double Width { get; set; }
     /// <summary>Chiều rộng theo trục Y (m).</summary>
@@ -94,8 +96,12 @@ public record ObstacleViewModel(int Id, string Kind, double X, double Y, double 
         => new(o.Id, o.Kind.ToString(), o.X, o.Y, o.Width, o.Depth);
 }
 
+/// <summary>Một dòng trong danh sách phòng: đủ để hiện thẻ phòng, không kèm kệ và vật cản.</summary>
+public record RoomSummaryViewModel(
+    int Id, string Name, double Width, double Depth, double GridSize, int RackCount, int ObstacleCount, int SlotCount);
+
 public record RoomViewModel(
-    int Id, double Width, double Depth, double GridSize, double MinGap, double Margin,
+    int Id, string Name, double Width, double Depth, double GridSize, double MinGap, double Margin,
     IReadOnlyList<RackViewModel> Racks, IReadOnlyList<ObstacleViewModel> Obstacles);
 
 /// <summary>

@@ -7,43 +7,54 @@ using Warehouse.Api.ViewModels;
 
 public interface ILayoutService
 {
-    ServiceResult<RoomViewModel> GetLayout();
+    ServiceResult<IReadOnlyList<RoomSummaryViewModel>> GetRooms();
+    ServiceResult<RoomViewModel> GetLayout(int roomId);
     ServiceResult<RoomCreatedViewModel> CreateRoom(RoomRequest request);
-    ServiceResult<PlacementCheckViewModel> ValidateRack(RackRequest request);
-    ServiceResult<RackCreatedViewModel> AddRack(RackRequest request);
-    ServiceResult<RoomCreatedViewModel> UpdateRoom(RoomRequest request);
-    ServiceResult<ObstacleCreatedViewModel> AddObstacle(ObstacleRequest request);
-    ServiceResult<ObstacleCreatedViewModel> RemoveObstacle(int id);
-    ServiceResult<RackUpdatedViewModel> UpdateRack(int id, RackRequest request);
+    ServiceResult<RoomCreatedViewModel> UpdateRoom(int roomId, RoomRequest request);
+    ServiceResult<PlacementCheckViewModel> ValidateRack(int roomId, RackRequest request);
+    ServiceResult<RackCreatedViewModel> AddRack(int roomId, RackRequest request);
+    ServiceResult<RackUpdatedViewModel> UpdateRack(int roomId, int id, RackRequest request);
+    ServiceResult<RackCreatedViewModel> RemoveRack(int roomId, int id);
+    ServiceResult<ObstacleCreatedViewModel> AddObstacle(int roomId, ObstacleRequest request);
+    ServiceResult<ObstacleCreatedViewModel> RemoveObstacle(int roomId, int id);
 }
 
 /// <summary>
-/// Mặt bằng: phòng và đặt kệ. Chỉ điều phối: lấy dữ liệu từ store → hỏi PlacementValidator → lưu.
+/// Mặt bằng: các phòng và đặt kệ. Chỉ điều phối: lấy dữ liệu từ store → hỏi PlacementValidator → lưu.
 /// Không tự viết luật đặt kệ (luật nằm ở Rules/PlacementValidator), để kiểm tra thử và đặt thật luôn ra cùng kết quả.
 /// </summary>
 public class LayoutService(IWarehouseStore store) : ILayoutService
 {
-    public ServiceResult<RoomViewModel> GetLayout()
+    /// <summary>Danh sách phòng để chọn: tên, kích thước, số kệ, số khung. Đếm khung bằng một lần đọc cho mọi phòng.</summary>
+    public ServiceResult<IReadOnlyList<RoomSummaryViewModel>> GetRooms()
     {
-        var room = store.GetRoom();
+        var slotsPerRack = SlotCountsByRack();
+        var rooms = store.GetRooms()
+            .Select(r => new RoomSummaryViewModel(
+                r.Id, r.Name, r.Width, r.Depth, r.GridSize, r.Racks.Count, r.Obstacles.Count,
+                r.Racks.Sum(k => slotsPerRack.GetValueOrDefault(k.Id))))
+            .ToList();
+        return ServiceResult<IReadOnlyList<RoomSummaryViewModel>>.Ok(rooms);
+    }
+
+    public ServiceResult<RoomViewModel> GetLayout(int roomId)
+    {
+        var room = store.GetRoom(roomId);
         return room is null
-            ? NoRoom<RoomViewModel>()
+            ? NoRoom<RoomViewModel>(roomId)
             : ServiceResult<RoomViewModel>.Ok(ToViewModel(room));
     }
 
-    /// <summary>
-    /// Tạo phòng. Hiện chỉ có một phòng; tạo lần hai báo Conflict thay vì ghi đè,
-    /// vì ghi đè sẽ làm mồ côi các kệ và khung của phòng cũ.
-    /// </summary>
+    /// <summary>Tạo phòng mới. Tên không được trùng phòng khác (không phân biệt hoa thường).</summary>
     public ServiceResult<RoomCreatedViewModel> CreateRoom(RoomRequest request)
     {
-        if (store.GetRoom() is not null)
-            return ServiceResult<RoomCreatedViewModel>.Fail(ServiceError.Conflict, "Đã có phòng.");
+        if (NameTaken(request.Name, exceptRoomId: null) is { } taken)
+            return ServiceResult<RoomCreatedViewModel>.Fail(ServiceError.Conflict, taken);
 
         Room room;
         try
         {
-            room = new Room(request.Width, request.Depth, request.GridSize, request.MinGap, request.Margin);
+            room = new Room(request.Name, request.Width, request.Depth, request.GridSize, request.MinGap, request.Margin);
         }
         catch (ArgumentException ex)
         {
@@ -59,11 +70,11 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
     /// Kiểm tra thử (bóng mờ khi kéo kệ): không lưu, không sinh khung. Gọi được cho kệ mới lẫn kệ đang dời,
     /// vì PlacementValidator bỏ qua kệ cùng mã nên kệ đang dời không tự đè chính nó.
     /// </summary>
-    public ServiceResult<PlacementCheckViewModel> ValidateRack(RackRequest request)
+    public ServiceResult<PlacementCheckViewModel> ValidateRack(int roomId, RackRequest request)
     {
-        var room = store.GetRoom();
+        var room = store.GetRoom(roomId);
         if (room is null)
-            return NoRoom<PlacementCheckViewModel>();
+            return NoRoom<PlacementCheckViewModel>(roomId);
 
         var (rack, error) = BuildRack(room, request);
         if (rack is null)
@@ -74,11 +85,11 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
         return ServiceResult<PlacementCheckViewModel>.Ok(new PlacementCheckViewModel(reason is null, reason, b.Width, b.Depth));
     }
 
-    public ServiceResult<RackCreatedViewModel> AddRack(RackRequest request)
+    public ServiceResult<RackCreatedViewModel> AddRack(int roomId, RackRequest request)
     {
-        var room = store.GetRoom();
+        var room = store.GetRoom(roomId);
         if (room is null)
-            return NoRoom<RackCreatedViewModel>();
+            return NoRoom<RackCreatedViewModel>(roomId);
 
         var code = request.Code.Trim();
         if (room.Racks.Any(r => string.Equals(r.Code, code, StringComparison.OrdinalIgnoreCase)))
@@ -107,16 +118,20 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
     /// thì phòng thật không bị sửa dở (store RAM trả chính đối tượng đang giữ, sửa thẳng là sửa luôn dữ liệu).
     /// Chỉ đổi GridSize thì luôn qua; thu nhỏ phòng hoặc tăng MinGap có thể làm kệ đang có không còn hợp lệ.
     /// </summary>
-    public ServiceResult<RoomCreatedViewModel> UpdateRoom(RoomRequest request)
+    public ServiceResult<RoomCreatedViewModel> UpdateRoom(int roomId, RoomRequest request)
     {
-        var room = store.GetRoom();
+        var room = store.GetRoom(roomId);
         if (room is null)
-            return NoRoom<RoomCreatedViewModel>();
+            return NoRoom<RoomCreatedViewModel>(roomId);
+
+        // Đổi tên trùng phòng KHÁC thì chặn; giữ nguyên tên của chính nó thì được.
+        if (NameTaken(request.Name, exceptRoomId: roomId) is { } taken)
+            return ServiceResult<RoomCreatedViewModel>.Fail(ServiceError.Conflict, taken);
 
         Room draft;
         try
         {
-            draft = new Room(request.Width, request.Depth, request.GridSize, request.MinGap, request.Margin);
+            draft = new Room(request.Name, request.Width, request.Depth, request.GridSize, request.MinGap, request.Margin);
         }
         catch (ArgumentException ex)
         {
@@ -135,7 +150,7 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
                 return ServiceResult<RoomCreatedViewModel>.Fail(ServiceError.Invalid, $"{rack.Code}: {reason}");
         }
 
-        room.Configure(request.Width, request.Depth, request.GridSize, request.MinGap, request.Margin);
+        room.Configure(request.Name, request.Width, request.Depth, request.GridSize, request.MinGap, request.Margin);
         store.SaveRoom(room);
         return ServiceResult<RoomCreatedViewModel>.Ok(new RoomCreatedViewModel(room.Id));
     }
@@ -144,11 +159,11 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
     /// Thêm tường/cột. Chặn đè kệ ở đây (cần cả kệ lẫn vật cản, nên không đặt trong Room);
     /// Room.AddObstacle tự chặn vật cản nằm ngoài phòng.
     /// </summary>
-    public ServiceResult<ObstacleCreatedViewModel> AddObstacle(ObstacleRequest request)
+    public ServiceResult<ObstacleCreatedViewModel> AddObstacle(int roomId, ObstacleRequest request)
     {
-        var room = store.GetRoom();
+        var room = store.GetRoom(roomId);
         if (room is null)
-            return NoRoom<ObstacleCreatedViewModel>();
+            return NoRoom<ObstacleCreatedViewModel>(roomId);
 
         // Không dùng Enum.TryParse: nó nhận cả chuỗi số ("5") và ra một loại không tồn tại.
         ObstacleKind? parsed = request.Kind switch
@@ -186,11 +201,11 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
         return ServiceResult<ObstacleCreatedViewModel>.Ok(new ObstacleCreatedViewModel(obstacle.Id));
     }
 
-    public ServiceResult<ObstacleCreatedViewModel> RemoveObstacle(int id)
+    public ServiceResult<ObstacleCreatedViewModel> RemoveObstacle(int roomId, int id)
     {
-        var room = store.GetRoom();
+        var room = store.GetRoom(roomId);
         if (room is null)
-            return NoRoom<ObstacleCreatedViewModel>();
+            return NoRoom<ObstacleCreatedViewModel>(roomId);
 
         if (!room.RemoveObstacle(id))
             return ServiceResult<ObstacleCreatedViewModel>.Fail(ServiceError.NotFound, $"Không có tường/cột Id {id}.");
@@ -206,11 +221,11 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
     /// 3. Kệ có hàng → 409: sinh lại khung sẽ mất PalletId, tức mất vị trí hàng.
     /// 4. Trong MỘT transaction: áp cấu hình, lưu, xoá khung cũ, sinh khung mới; lỗi giữa chừng thì không có kệ mất khung.
     /// </summary>
-    public ServiceResult<RackUpdatedViewModel> UpdateRack(int id, RackRequest request)
+    public ServiceResult<RackUpdatedViewModel> UpdateRack(int roomId, int id, RackRequest request)
     {
-        var room = store.GetRoom();
+        var room = store.GetRoom(roomId);
         if (room is null)
-            return NoRoom<RackUpdatedViewModel>();
+            return NoRoom<RackUpdatedViewModel>(roomId);
 
         var rack = room.Racks.FirstOrDefault(r => r.Id == id);
         if (rack is null)
@@ -245,6 +260,35 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
         return ServiceResult<RackUpdatedViewModel>.Ok(new RackUpdatedViewModel(id, slots.Count));
     }
 
+    /// <summary>
+    /// Xoá kệ cùng mọi khung của nó. Kệ đang có hàng thì chặn (409): xoá khung là mất PalletId, tức mất vị trí hàng.
+    /// Xoá khung rồi mới xoá kệ, trong MỘT transaction: lỗi giữa chừng thì không có kệ mất khung hay khung mồ côi.
+    /// (Trên PostgreSQL, xoá kệ cũng tự xoá khung nhờ cascade; gọi RemoveSlotsOfRack để store RAM cũng đúng.)
+    /// </summary>
+    public ServiceResult<RackCreatedViewModel> RemoveRack(int roomId, int id)
+    {
+        var room = store.GetRoom(roomId);
+        if (room is null)
+            return NoRoom<RackCreatedViewModel>(roomId);
+
+        var rack = room.Racks.FirstOrDefault(r => r.Id == id);
+        if (rack is null)
+            return ServiceResult<RackCreatedViewModel>.Fail(ServiceError.NotFound, $"Không có kệ Id {id}.");
+
+        if (store.GetSlotsOfRack(id).Any(s => s.PalletId is not null))
+            return ServiceResult<RackCreatedViewModel>.Fail(ServiceError.Conflict,
+                "Kệ đang có hàng, dời hàng trước khi xoá.");
+
+        store.InTransaction(() =>
+        {
+            store.RemoveSlotsOfRack(id);
+            room.Racks.Remove(rack);
+            store.SaveRoom(room);   // EF tự DELETE kệ bị bỏ khỏi danh sách (quan hệ bắt buộc với phòng)
+        });
+
+        return ServiceResult<RackCreatedViewModel>.Ok(new RackCreatedViewModel(id, rack.Code));
+    }
+
     // Đổi ViewModel sang Rack. Constructor Rack tự kiểm tra (mã rỗng, Rotation khác 0/90…);
     // bắt ArgumentException ở đây để trả câu lý do thay vì lỗi 500.
     private static (Rack? Rack, string? Error) BuildRack(Room room, RackRequest r)
@@ -269,9 +313,22 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
             .ToList();
         var obstacles = room.Obstacles.Select(ObstacleViewModel.From).ToList();
 
-        return new RoomViewModel(room.Id, room.Width, room.Depth, room.GridSize, room.MinGap, room.Margin, racks, obstacles);
+        return new RoomViewModel(room.Id, room.Name, room.Width, room.Depth, room.GridSize, room.MinGap, room.Margin,
+                                 racks, obstacles);
     }
 
-    private static ServiceResult<T> NoRoom<T>()
-        => ServiceResult<T>.Fail(ServiceError.NotFound, "Chưa có phòng. Tạo phòng trước (POST /api/layout/room).");
+    /// <summary>Câu lỗi nếu tên đã có phòng khác dùng (không phân biệt hoa thường, đã cắt khoảng trắng), ngược lại null.</summary>
+    private string? NameTaken(string? name, int? exceptRoomId)
+    {
+        var trimmed = (name ?? "").Trim();
+        var taken = store.GetRooms().Any(r => r.Id != exceptRoomId
+                                              && string.Equals(r.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+        return taken ? $"Đã có phòng tên {trimmed}." : null;
+    }
+
+    private Dictionary<int, int> SlotCountsByRack()
+        => store.GetAllSlots().GroupBy(s => s.RackId).ToDictionary(g => g.Key, g => g.Count());
+
+    private static ServiceResult<T> NoRoom<T>(int roomId)
+        => ServiceResult<T>.Fail(ServiceError.NotFound, $"Không có phòng Id {roomId}.");
 }

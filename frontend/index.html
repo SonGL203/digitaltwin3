@@ -17,13 +17,20 @@
       <span id="api-status" class="api-status">Đang kết nối API…</span>
     </header>
 
-    <div class="workspace">
+    <div class="workspace" id="workspace">
       <aside class="sidebar" id="sidebar"></aside>
 
       <main class="stage">
         <section class="view" id="view-layout">
-          <div class="toolbar" id="toolbar-2d"></div>
-          <div class="canvas-wrap" id="editor2d"></div>
+          <div class="room-list" id="room-list"></div>
+          <div class="room-editor" id="room-editor">
+            <div class="room-header">
+              <button type="button" id="back-to-rooms">← Danh sách phòng</button>
+              <strong id="room-title"></strong>
+            </div>
+            <div class="toolbar" id="toolbar-2d"></div>
+            <div class="canvas-wrap" id="editor2d"></div>
+          </div>
         </section>
         <section class="view" id="view-warehouse" hidden>
           <div class="canvas-wrap" id="viewport3d"></div>

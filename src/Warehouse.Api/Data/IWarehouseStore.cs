@@ -10,8 +10,11 @@ using Warehouse.Api.Models;
 /// </summary>
 public interface IWarehouseStore
 {
-    /// <summary>Phòng (kèm danh sách kệ trong Racks). Null nếu chưa có phòng nào.</summary>
-    Room? GetRoom();
+    /// <summary>Mọi phòng (kèm kệ và vật cản), sắp theo Id.</summary>
+    IReadOnlyList<Room> GetRooms();
+
+    /// <summary>Phòng theo Id (kèm kệ và vật cản). Null nếu không có.</summary>
+    Room? GetRoom(int id);
 
     /// <summary>Lưu phòng và các kệ trong room.Racks; đối tượng mới được gán Id.</summary>
     void SaveRoom(Room room);

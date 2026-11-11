@@ -12,16 +12,22 @@ public class InMemoryWarehouseStore : IWarehouseStore
 {
     private readonly object _lock = new();
     private readonly List<Slot> _slots = new();
-    private Room? _room;
+    private readonly List<Room> _rooms = new();
     private int _nextRoomId = 1;
     private int _nextRackId = 1;
     private int _nextObstacleId = 1;
     private int _nextSlotId = 1;
 
-    public Room? GetRoom()
+    public IReadOnlyList<Room> GetRooms()
     {
         lock (_lock)
-            return _room;
+            return _rooms.ToList();
+    }
+
+    public Room? GetRoom(int id)
+    {
+        lock (_lock)
+            return _rooms.FirstOrDefault(r => r.Id == id);
     }
 
     public void SaveRoom(Room room)
@@ -31,7 +37,10 @@ public class InMemoryWarehouseStore : IWarehouseStore
         lock (_lock)
         {
             if (room.Id == 0)
+            {
                 SetId(room, _nextRoomId++);
+                _rooms.Add(room);
+            }
 
             foreach (var rack in room.Racks.Where(r => r.Id == 0))
                 SetId(rack, _nextRackId++);
@@ -39,7 +48,6 @@ public class InMemoryWarehouseStore : IWarehouseStore
             foreach (var obstacle in room.Obstacles.Where(o => o.Id == 0))
                 SetId(obstacle, _nextObstacleId++);
 
-            _room = room;
         }
     }
 

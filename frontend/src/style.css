@@ -203,3 +203,72 @@ body {
 .toolbar { overflow: hidden; }
 .toolbar button, .toolbar label { white-space: nowrap; flex-shrink: 0; }
 .toolbar-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- nhiều phòng: danh sách phòng, form thêm phòng, thanh tên phòng ---- */
+.workspace.no-sidebar .sidebar { display: none; }
+.room-list { flex: 1; overflow-y: auto; padding: 20px 24px; }
+.room-list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.room-list-head h1 { font-size: 18px; margin: 0; }
+.room-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.room-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.room-card:hover { border-color: var(--accent); }
+.room-card strong { font-size: 15px; }
+.room-card .muted { color: var(--muted); font-size: 13px; }
+.room-form {
+  max-width: 520px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.room-form h2 { font-size: 15px; margin: 0 0 8px; }
+.grid-form.wide { grid-template-columns: repeat(3, 1fr); }
+button.primary {
+  font: inherit;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+.room-form .form-actions button:not(.primary) {
+  font: inherit;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  cursor: pointer;
+}
+.room-editor { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.room-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.room-header button {
+  font: inherit;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.form-actions .push-left { margin-right: auto; }

@@ -1,5 +1,5 @@
 import {
-  addObstacle, clearPreview, nextRackCode, previewRack, rackToRequest, removeObstacle, saveRack, saveRoom,
+  addObstacle, clearPreview, nextRackCode, previewRack, rackToRequest, removeObstacle, removeRack, saveRack, saveRoom,
 } from '../state/actions.js';
 import { getState, selectedObstacle, selectedRack, setState, subscribe } from '../state/store.js';
 import { formatInt, formatMeters } from './format.js';
@@ -53,6 +53,7 @@ export function createSidebar(root) {
       <details class="section" open>
         <summary>Phòng</summary>
         <form data-form="room" class="grid-form">
+          <label class="full">Tên phòng<input name="name" value="${escapeHtml(room.name)}" maxlength="50" required /></label>
           ${num('width', 'Dài (m)', room.width, 0.5, 0.1)}
           ${num('depth', 'Rộng (m)', room.depth, 0.5, 0.1)}
           ${num('gridSize', 'Lưới (m)', room.gridSize, 0.05, 0.05)}
@@ -92,6 +93,7 @@ export function createSidebar(root) {
           ${rackFields(r)}
           <p class="live full" data-live="rack-check"></p>
           <div class="form-actions">
+            <button type="button" class="danger push-left" data-action="remove-rack">Xoá kệ</button>
             <button type="button" data-action="cancel-rack">Huỷ</button>
             <button type="submit">Lưu kệ</button>
           </div>
@@ -203,7 +205,11 @@ export function createSidebar(root) {
     if (!t) return;
     if (t.dataset.rackId) setState({ selectedRackId: Number(t.dataset.rackId), selectedObstacleId: null });
     if (t.dataset.obstacleId) setState({ selectedObstacleId: Number(t.dataset.obstacleId), selectedRackId: null });
-    if (t.dataset.removeObstacle) removeObstacle(Number(t.dataset.removeObstacle));
+    if (t.dataset.removeObstacle) {
+      const obstacle = getState().layout?.obstacles.find((o) => o.id === Number(t.dataset.removeObstacle));
+      if (obstacle) removeObstacle(obstacle);
+    }
+    if (t.dataset.action === 'remove-rack' && selectedRack()) removeRack(selectedRack());
     if (t.dataset.action === 'place-rack') {
       clearPreview();
       setState({ tool: 'add-rack' });
@@ -255,7 +261,10 @@ export function createSidebar(root) {
 // ---------- tiện ích ----------
 
 function num(name, label, value, min, step, type = 'number') {
-  return `<label>${label}<input type="number" name="${name}" value="${value}" min="${min}" step="${step}" data-type="${type}" required /></label>`;
+  // Số thực: step="any". Nếu để step="0.1" cùng min="0.01" thì trình duyệt chỉ nhận 0,01; 0,11; 0,21…
+  // (bước tính từ min) và chặn 0,4. Đúng sai thật do server kiểm tra. Số nguyên (tầng, ô hàng) giữ bước 1.
+  const stepAttr = type === 'int' ? step : 'any';
+  return `<label>${label}<input type="number" name="${name}" value="${value}" min="${min}" step="${stepAttr}" data-type="${type}" required /></label>`;
 }
 
 /** Đọc form thành object đúng kiểu cho API: số thực, số nguyên, true/false, chữ. */

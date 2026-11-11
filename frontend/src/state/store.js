@@ -1,14 +1,19 @@
 import { api, ApiError } from '../api/client.js';
 
-// Trạng thái dùng chung của giao diện. Một chỗ giữ dữ liệu, các phần (editor 2D, bảng bên, thanh trạng thái)
-// đăng ký nghe thay đổi rồi tự vẽ lại. Không dùng framework: dự án nhỏ, một hàm subscribe là đủ.
+// Trạng thái dùng chung của giao diện. Một chỗ giữ dữ liệu, các phần (danh sách phòng, editor 2D, bảng bên,
+// thanh trạng thái) đăng ký nghe thay đổi rồi tự vẽ lại. Không dùng framework: dự án nhỏ, một hàm subscribe là đủ.
 //
-// layout: đúng như GET /api/layout trả về (mét). Frontend không sửa layout tại chỗ; muốn đổi thì gọi API
+// layout: đúng như GET /api/rooms/{id} trả về (mét). Frontend không sửa layout tại chỗ; muốn đổi thì gọi API
 // rồi tải lại, để màn hình luôn khớp database.
 
 const state = {
   step: 'layout',          // 'layout' | 'warehouse' | 'receive'
-  layout: null,            // dữ liệu phòng từ server, null khi chưa có phòng
+
+  rooms: [],               // danh sách phòng (tóm tắt) cho màn chọn phòng
+  roomsLoaded: false,
+  currentRoomId: null,     // phòng đang mở trong editor; null = đang ở màn danh sách phòng
+
+  layout: null,            // phòng đang mở (đủ kệ, vật cản), null khi chưa mở phòng nào
   layoutVersion: 0,        // tăng mỗi lần tải lại: bảng bên dựa vào đây để biết khi nào vẽ lại form
   loading: false,
   selectedRackId: null,
@@ -51,11 +56,49 @@ export function showMessage(text, kind = 'info') {
   setState({ message: { text, kind } });
 }
 
-/** Tải lại mặt bằng từ server. 404 nghĩa là chưa có phòng, không phải lỗi. */
+// ---------- danh sách phòng, mở/đóng phòng ----------
+// Địa chỉ trang giữ phòng đang mở (#/rooms/3), để tải lại trang hay bấm Back vẫn đúng chỗ.
+
+export async function loadRooms() {
+  try {
+    setState({ rooms: await api.listRooms(), roomsLoaded: true });
+  } catch (err) {
+    setState({ roomsLoaded: true });
+    showMessage(err.message, 'error');
+  }
+}
+
+/** Mở một phòng trong editor. Đổi phòng thì bỏ chọn, bỏ bóng mờ, về công cụ Chọn. */
+export async function openRoom(roomId) {
+  if (location.hash !== `#/rooms/${roomId}`) history.pushState(null, '', `#/rooms/${roomId}`);
+  setState({
+    currentRoomId: roomId, layout: null, selectedRackId: null, selectedObstacleId: null,
+    preview: null, tool: 'select', message: null,
+  });
+  await loadLayout();
+}
+
+/** Về màn danh sách phòng (tải lại danh sách vì số kệ, tên… có thể vừa đổi). */
+export async function closeRoom() {
+  if (location.hash !== '#/rooms') history.pushState(null, '', '#/rooms');
+  setState({ currentRoomId: null, layout: null, preview: null, tool: 'select', message: null });
+  await loadRooms();
+}
+
+/** Đọc địa chỉ trang rồi mở đúng màn: #/rooms/3 → phòng 3, còn lại → danh sách. */
+export function syncWithAddress() {
+  const id = /^#\/rooms\/(\d+)$/.exec(location.hash)?.[1];
+  return id ? openRoom(Number(id)) : closeRoom();
+}
+
+/** Tải lại phòng đang mở từ server. Phòng không còn (ví dụ gõ sai Id trên địa chỉ) thì quay về danh sách. */
 export async function loadLayout() {
+  const roomId = state.currentRoomId;
+  if (roomId == null) return;
   setState({ loading: true });
   try {
-    const layout = await api.getLayout();
+    const layout = await api.getRoom(roomId);
+    if (state.currentRoomId !== roomId) return;   // người dùng đã chuyển phòng khác trong lúc chờ
     setState({
       layout,
       layoutVersion: state.layoutVersion + 1,
@@ -64,13 +107,11 @@ export async function loadLayout() {
       selectedObstacleId: layout.obstacles.some((o) => o.id === state.selectedObstacleId) ? state.selectedObstacleId : null,
     });
   } catch (err) {
+    setState({ loading: false });
     if (err instanceof ApiError && err.status === 404) {
-      setState({ layout: null, layoutVersion: state.layoutVersion + 1, loading: false });
-      showMessage('Chưa có phòng. Bật "Seed:SampleLayout" hoặc tạo phòng qua API.');
-    } else {
-      setState({ loading: false });
-      showMessage(err.message, 'error');
+      await closeRoom();
     }
+    showMessage(err.message, 'error');
   }
 }
 

@@ -7,7 +7,7 @@ namespace Warehouse.Tests.Rules;
 // Kệ mẫu: 2 ô × 1,0 m = dài 2,0 m theo X, sâu 1,0 m theo Y (xoay 90° thì 1,0 × 2,0).
 public class PlacementValidatorTests
 {
-    private static Room MakeRoom(double minGap = 1.0) => new(10, 5, 0.5, minGap, 0.05);
+    private static Room MakeRoom(double minGap = 1.0) => new("Kho A", 10, 5, 0.5, minGap, 0.05);
 
     private static Rack MakeRack(string code, double x, double y, int rotation = 0)
         => new(1, code, x, y, rotation, 2, 1.3, 2, 1.0, 1.0, false, 1000);

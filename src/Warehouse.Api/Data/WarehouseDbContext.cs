@@ -27,6 +27,10 @@ public class WarehouseDbContext(DbContextOptions<WarehouseDbContext> options) : 
         model.Entity<Room>(room =>
         {
             room.HasKey(r => r.Id);
+            room.Property(r => r.Name).IsRequired().HasMaxLength(50);
+            // Lưới an toàn ở tầng DB: tên phòng không trùng. LayoutService đã chặn trước (và chặn cả khác hoa thường);
+            // index này bắt trường hợp hai request tạo cùng tên đến cùng lúc.
+            room.HasIndex(r => r.Name).IsUnique();
             // Width, Depth, GridSize, MinGap, Margin (m): EF tự map double → double precision.
 
             // Room.Racks chỉ có getter ({ get; } = new()); EF dùng field ẩn phía sau để nạp danh sách.
@@ -74,8 +78,9 @@ public class WarehouseDbContext(DbContextOptions<WarehouseDbContext> options) : 
                 .HasForeignKey(s => s.RackId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            // Mã khung (K1-T1-R1) duy nhất toàn DB: chỉ đúng khi có một phòng; nhiều phòng thì đổi thành (RackId, Code).
-            slot.HasIndex(s => s.Code).IsUnique();
+            // Mã khung (K1-T1-R1) duy nhất TRONG MỘT KỆ. Không để duy nhất toàn DB: hai phòng đều có kệ K1
+            // thì cùng có khung K1-T1-R1.
+            slot.HasIndex(s => new { s.RackId, s.Code }).IsUnique();
 
             // PalletId chưa có khoá ngoại vì bảng Pallet chưa map; thêm ở ngày 3.
         });
