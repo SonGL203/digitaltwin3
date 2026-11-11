@@ -61,4 +61,19 @@ public class EfWarehouseStore(WarehouseDbContext db) : IWarehouseStore
         db.Slots.RemoveRange(slots);
         db.SaveChanges();
     }
+
+    public void InTransaction(Action work)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+
+        // Mở transaction của PostgreSQL. Mọi SaveChanges bên trong work đều chạy trong transaction này:
+        // dữ liệu đã gửi xuống DB nhưng người khác chưa thấy, cho tới khi Commit.
+        using var transaction = db.Database.BeginTransaction();
+
+        work();
+
+        // Chỉ tới được đây khi work chạy hết không lỗi. Nếu work ném lỗi thì không Commit;
+        // khi rời khỏi hàm, "using" huỷ transaction và PostgreSQL tự rollback mọi thứ đã ghi bên trong.
+        transaction.Commit();
+    }
 }

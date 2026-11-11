@@ -78,6 +78,8 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
     ///    vì giữa lúc kéo và lúc thả có thể đã có người đặt kệ khác vào đó.
     /// 3. Lưu kệ (SaveRoom gán Rack.Id) rồi MỚI sinh khung: CreateSlots lấy Rack.Id làm RackId,
     ///    sinh trước thì mọi khung có RackId = 0.
+    /// 4. Bước 3 gồm hai lần ghi nên bọc trong một transaction: nếu lưu khung lỗi thì kệ cũng bị huỷ,
+    ///    không bao giờ có kệ mà không có khung.
     /// </summary>
     public ServiceResult<RackCreatedViewModel> AddRack(RackRequest request)
     {
@@ -97,10 +99,12 @@ public class LayoutService(IWarehouseStore store) : ILayoutService
         if (reason is not null)
             return ServiceResult<RackCreatedViewModel>.Fail(ServiceError.Invalid, reason);
 
-        room.Racks.Add(rack);
-        store.SaveRoom(room);              // rack.Id có từ đây
-
-        store.AddSlots(rack.CreateSlots());   // RackId = rack.Id
+        store.InTransaction(() =>
+        {
+            room.Racks.Add(rack);
+            store.SaveRoom(room);                 // lần ghi 1: rack.Id có từ đây
+            store.AddSlots(rack.CreateSlots());   // lần ghi 2: RackId = rack.Id
+        });
 
         return ServiceResult<RackCreatedViewModel>.Ok(new RackCreatedViewModel(rack.Id, rack.Code));
     }

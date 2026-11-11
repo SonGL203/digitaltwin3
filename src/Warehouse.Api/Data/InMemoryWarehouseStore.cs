@@ -73,6 +73,20 @@ public class InMemoryWarehouseStore : IWarehouseStore
             _slots.RemoveAll(s => s.RackId == rackId);
     }
 
+    /// <summary>
+    /// Chỉ chạy work trong lock để không request nào chen vào giữa. KHÔNG rollback được: store RAM sửa thẳng
+    /// đối tượng trong bộ nhớ, không có bản cũ để quay lại. Chấp nhận được vì store này chỉ dùng trong test,
+    /// nơi các lần ghi trong RAM không lỗi giữa chừng; muốn kiểm tra rollback thì phải test trên PostgreSQL.
+    /// </summary>
+    public void InTransaction(Action work)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+
+        // lock của C# cho phép cùng một luồng vào lại (work gọi SaveRoom, AddSlots cũng lock) nên không tự khoá chết.
+        lock (_lock)
+            work();
+    }
+
     // Id của model có setter private (chỉ constructor và cơ sở dữ liệu được gán). Store RAM đóng vai cơ sở dữ liệu
     // nên gán bằng reflection, ở một chỗ duy nhất này, thay vì mở setter ra cho cả code.
     private static void SetId(object entity, int id)
