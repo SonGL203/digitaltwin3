@@ -184,4 +184,74 @@ public class AllocatorTests
         Assert.Equal("K1-T1-R2", result.Placements[0].Target.Slot.Code);
         Assert.Single(result.Rejected);
     }
+
+    // ---- xếp theo type: mỗi type một kệ, ngăn trống nguyên, phần dư nhét chỗ trống ----
+
+    // Pallet có mã type và số đo tuỳ ý (PalletOf chỉ có hai type A/B).
+    private static List<Pallet> Typed(string typeCode, int count, double length, double width, double height)
+        => Enumerable.Range(1, count)
+            .Select(i => new Pallet(1, new PalletSize(typeCode, length, width, height, "#888"), $"{typeCode}{i}"))
+            .ToList();
+
+    private static List<string> SlotsOf(AllocationResult result, string typePrefix)
+        => result.Placements.Where(p => p.Pallet.Code.StartsWith(typePrefix)).Select(p => p.Target.Slot.Code).ToList();
+
+    [Fact]
+    public void Allocate_EachTypeGetsItsOwnRack_AndLeftoverFillsGapsOnlyWhenNoFreshRackIsLeft()
+    {
+        // 3 kệ, mỗi kệ 2 tầng × 3 ô = 6 khung. Lô: 4 pallet C (to nhất, xếp trước), 8 A, 5 D.
+        var candidates = Candidates(LowRack("K1"), LowRack("K2"), LowRack("K3"));
+        var pallets = Typed("A", 8, 1.0, 0.8, 1.0)
+            .Concat(Typed("C", 4, 1.1, 0.85, 1.1))
+            .Concat(Typed("D", 5, 0.6, 0.5, 0.5)).ToList();
+
+        var result = Allocator.Allocate(pallets, candidates, Margin);
+
+        Assert.Empty(result.Rejected);
+        Assert.Equal(17, result.Placements.Count);
+        // C vào K1 (kệ riêng); K1 còn 2 khung trống nhưng A không chen vào mà sang K2, rồi K3 vì K2 chỉ có 6 khung.
+        Assert.All(SlotsOf(result, "C"), c => Assert.StartsWith("K1-", c));
+        Assert.Equal(6, SlotsOf(result, "A").Count(c => c.StartsWith("K2-")));
+        Assert.Equal(2, SlotsOf(result, "A").Count(c => c.StartsWith("K3-")));
+        // D: hết kệ chưa có hàng → dồn vào K3 (kệ đã có D sau pallet đầu, và còn 4 khung trống), phần dư 1 pallet vào chỗ trống K1.
+        Assert.Equal(4, SlotsOf(result, "D").Count(c => c.StartsWith("K3-")));
+        Assert.Single(SlotsOf(result, "D").Where(c => c.StartsWith("K1-")));
+    }
+
+    [Fact]
+    public void Allocate_PrefersAWhollyEmptyLevelOverAGapInAnotherLevel()
+    {
+        // K1: 2 tầng × 3 ô. Tầng 1 đã có 1 pallet loại A (còn 2 chỗ lẻ), tầng 2 trống nguyên. Không còn kệ nào khác.
+        // Pallet type D (khác A): theo thứ tự kệ → tầng → ô sẽ vào chỗ lẻ K1-T1-R2; luật mới ưu tiên ngăn trống nguyên K1-T2-R1.
+        var candidates = Candidates(LowRack("K1"));
+        candidates[0].Slot.Place(Typed("A", 1, 1.0, 0.8, 1.0)[0]);
+
+        var result = Allocator.Allocate(Typed("D", 1, 0.6, 0.5, 0.5), candidates, Margin);
+
+        Assert.Equal("K1-T2-R1", Assert.Single(result.Placements).Target.Slot.Code);
+    }
+
+    [Fact]
+    public void Allocate_KeepsFillingARackThatAlreadyHoldsTheSameType_BeforeUsingAFreshRack()
+    {
+        var candidates = Candidates(LowRack("K1"), LowRack("K2"));
+        candidates[0].Slot.Place(Typed("A", 1, 1.0, 0.8, 1.0)[0]);
+
+        var result = Allocator.Allocate(Typed("A", 2, 1.0, 0.8, 1.0), candidates, Margin);
+
+        Assert.All(result.Placements, p => Assert.Equal("K1", p.Target.Rack.Code));
+    }
+
+    [Fact]
+    public void Allocate_TopSlotsOfAnyRackComeAfterNormalSlotsOfEveryRack()
+    {
+        // K1 (có nóc) liệt kê trước K2 (tầng cao). Pallet cao 1,5 m vừa nóc K1 và khung thường K2: phải vào K2.
+        var candidates = Candidates(LowRack("K1", levels: 1, bays: 2, hasTop: true), HighRack("K2", levels: 1, bays: 2));
+
+        var result = Allocator.Allocate(Batch("B", 1, height: 1.5), candidates, Margin);
+
+        var placed = Assert.Single(result.Placements);
+        Assert.Equal("K2", placed.Target.Rack.Code);
+        Assert.False(placed.IsTop);
+    }
 }

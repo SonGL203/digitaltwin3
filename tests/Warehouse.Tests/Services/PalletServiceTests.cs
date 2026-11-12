@@ -190,6 +190,32 @@ public class PalletServiceTests
     }
 
     [Fact]
+    public void Allocate_TopSlotsOfEarlierRackAreNotTakenBeforeNormalSlotsOfLaterRack()
+    {
+        // K1 (có nóc, tầng cao 1,2 m) liệt kê trước K2 (tầng cao 2,0 m, không nóc). Pallet cao 1,6 m vừa khung thường của K2
+        // và cũng vừa nóc K1. Nóc là chỗ cuối cùng, nên pallet phải vào K2, không chiếm nóc K1 chỉ vì K1 đứng trước.
+        var (layout, pallets, store, roomId) = Setup();
+        var k1 = store.GetRoom(roomId)!.Racks[0].Id;
+        var request = new LayoutRequest { Name = "Kho A", Width = 10, Depth = 5, GridSize = 0.5, MinGap = 1.0, Margin = 0.05, Version = 1 };
+        request.Racks.Add(new LayoutRackRequest
+        {
+            Id = k1, Code = "K1", X = 0, Y = 0, Rotation = 0, Levels = 3, LevelHeight = 1.2, Bays = 3, BayWidth = 1.0, Depth = 1.0,
+            HasTop = true, MaxWeight = 1000,
+        });
+        request.Racks.Add(new LayoutRackRequest
+        {
+            Code = "K2", X = 0, Y = 3, Rotation = 0, Levels = 2, LevelHeight = 2.0, Bays = 3, BayWidth = 1.0, Depth = 1.0,
+            HasTop = false, MaxWeight = 1000,
+        });
+        Assert.True(layout.SaveLayout(roomId, request).IsSuccess);
+
+        var result = ReceiveAndAllocate(pallets, roomId, Lot((2, 0.8, 0.8, 1.6)));
+
+        Assert.All(result.Placements, p => Assert.StartsWith("K2-T", p.SlotCode));
+        Assert.All(result.Placements, p => Assert.False(p.IsTop));
+    }
+
+    [Fact]
     public void Allocate_Twice_DoesNotPlaceAnythingAgain()
     {
         var (_, pallets, store, roomId) = Setup();

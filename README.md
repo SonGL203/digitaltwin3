@@ -125,8 +125,9 @@ Controllers → Services → Rules → Models
 2. **`Slot.CanHold`** trả `null` hoặc câu lý do. Thứ tự kiểm tra: loại hàng → đáy (thử xoay 90°) → chiều cao (bỏ qua với khung nóc) → tải trọng. Kệ chung nhận mọi pallet; kệ chuyên chỉ nhận đúng loại.
 3. **`Allocator.Allocate`** trả `Placements` và `Rejected` và **không sửa khung** (`PalletService` mới gọi `Place()` rồi lưu):
    - Pallet không khung nào vừa bị từ chối ngay kèm lý do.
-   - Còn lại xếp theo thứ tự **ít khung nhận được nhất trước** (hoà thì thể tích lớn trước, rồi thứ tự nhập), vì pallet kén chỗ mà xếp sau thì dễ mất chỗ.
-   - Mỗi pallet lấy khung trống đầu tiên chưa bị chiếm, duyệt theo kệ → tầng → ô (nóc cuối). Không dùng ngẫu nhiên nên cùng lô cho cùng kết quả.
+   - Gom theo **type** và xếp **từng type một**, type có **ít khung nhận được nhất trước** (hoà thì thể tích lớn trước, rồi thứ tự nhập), vì type kén chỗ mà xếp sau thì dễ mất chỗ.
+   - Mỗi pallet chọn khung trống vừa theo thứ tự ưu tiên: (0) kệ đã có pallet **cùng type**; (1) kệ **chưa có hàng** (mỗi type một kệ riêng, dù kệ trước còn chỗ trống); (2) một **tầng còn trống nguyên** trong kệ đã có hàng khác; (3) khung trống bất kỳ còn lại (phần dư nhét vào chỗ trống khi hết kệ riêng). Bằng hạng thì theo kệ → tầng → ô.
+   - **Khung nóc luôn xếp sau cùng**, của mọi kệ: chỉ dùng khi không còn khung thường nào vừa. Không dùng ngẫu nhiên nên cùng lô cho cùng kết quả.
    - Giới hạn đã biết: không đảm bảo xếp hết khi các type không lồng nhau.
 4. **Ba bước, bấm lại không xếp đôi:** Xem trước (không ghi) → Nhập lô (lưu pallet, chưa có khung) → Xếp (chỉ xếp pallet chưa nằm trong khung nào).
 

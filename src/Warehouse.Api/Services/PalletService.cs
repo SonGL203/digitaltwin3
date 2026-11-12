@@ -74,7 +74,7 @@ public class PalletService(IWarehouseStore store) : IPalletService
         if (resolved is null)
             return ServiceResult<BatchPreviewViewModel>.Fail(ServiceError.Invalid, error!);
 
-        var candidates = CandidatesOf(room);
+        var candidates = PlacementOrder(room);
 
         // Pallet tạm (chưa lưu, Id = 0): đủ cho SlotFinder/Allocator vì chỉ đọc số đo qua Size.
         var palletsOfLine = resolved
@@ -184,7 +184,7 @@ public class PalletService(IWarehouseStore store) : IPalletService
             var placedIds = store.GetAllSlots().Where(s => s.PalletId is not null).Select(s => s.PalletId!.Value).ToHashSet();
             var unplaced = batch.Pallets.Where(p => !placedIds.Contains(p.Id)).OrderBy(p => p.Id).ToList();
 
-            var allocation = Allocator.Allocate(unplaced, CandidatesOf(room), room.Margin);
+            var allocation = Allocator.Allocate(unplaced, PlacementOrder(room), room.Margin);
 
             foreach (var placement in allocation.Placements)
                 placement.Target.Slot.Place(placement.Pallet);
@@ -298,7 +298,15 @@ public class PalletService(IWarehouseStore store) : IPalletService
         return (resolved, null);
     }
 
-    /// <summary>Mọi khung của phòng theo thứ tự kệ → tầng → ô (nóc cuối), đúng thứ tự Allocator cần để tất định.</summary>
+    /// <summary>
+    /// Thứ tự khung để XẾP: khung thường của MỌI kệ trước, khung nóc của mọi kệ sau cùng. Nóc là chỗ cuối cùng cho pallet
+    /// quá cao (hoặc khi hết chỗ khác), nên không được chiếm trước một khung thường còn trống ở kệ khác.
+    /// OrderBy ổn định: trong mỗi nhóm vẫn giữ thứ tự kệ → tầng → ô, nên kết quả vẫn tất định.
+    /// </summary>
+    private List<SlotCandidate> PlacementOrder(Room room)
+        => CandidatesOf(room).OrderBy(c => c.Slot.IsTop).ToList();
+
+    /// <summary>Mọi khung của phòng theo thứ tự kệ → tầng → ô (nóc cuối của từng kệ); dùng để đọc/hiển thị.</summary>
     private List<SlotCandidate> CandidatesOf(Room room)
     {
         var slotsOfRack = store.GetSlotsOfRacks(room.Racks.Select(r => r.Id).ToList()).ToLookup(s => s.RackId);
