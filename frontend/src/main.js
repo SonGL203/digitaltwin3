@@ -1,7 +1,8 @@
 import { api } from './api/client.js';
 import { createEditor2d } from './editor2d/editor2d.js';
-import { createScene } from './scene3d/scene.js';
-import { closeRoom, getState, setState, subscribe, syncWithAddress } from './state/store.js';
+import { createWarehouse3d } from './scene3d/warehouse3d.js';
+import { createReceive } from './ui/receive.js';
+import { closeRoom, getState, goToStep, setState, subscribe, syncWithAddress } from './state/store.js';
 import { createRoomList } from './ui/roomList.js';
 import { createSidebar } from './ui/sidebar.js';
 import { formatMeters } from './ui/format.js';
@@ -12,7 +13,6 @@ import { formatMeters } from './ui/format.js';
 const views = {
   layout: document.getElementById('view-layout'),
   warehouse: document.getElementById('view-warehouse'),
-  receive: document.getElementById('view-receive'),
 };
 const workspace = document.getElementById('workspace');
 const roomListEl = document.getElementById('room-list');
@@ -24,6 +24,7 @@ const statusCursor = document.getElementById('status-cursor');
 
 createRoomList(roomListEl);
 createSidebar(document.getElementById('sidebar'));
+createReceive(document.getElementById('receive-root'));
 createEditor2d(document.getElementById('editor2d'), document.getElementById('toolbar-2d'), {
   onCursor(info) {
     if (!info) {
@@ -39,10 +40,11 @@ document.getElementById('back-to-rooms').addEventListener('click', () => closeRo
 
 // Cảnh 3D chỉ tạo khi mở bước 2 lần đầu: tạo lúc khung đang ẩn thì kích thước bằng 0.
 let scene3d = null;
+let drawn = { layout: undefined, slots: undefined };   // dữ liệu đã đưa cho cảnh 3D, để không dựng lại khi chưa đổi gì
 
 document.getElementById('steps').addEventListener('click', (e) => {
   const step = e.target.closest('[data-step]')?.dataset.step;
-  if (step) setState({ step });
+  if (step) goToStep(step);
 });
 
 // Nút Back/Forward của trình duyệt: đọc lại địa chỉ (#/rooms hoặc #/rooms/3) rồi mở đúng màn.
@@ -62,7 +64,19 @@ function render(state) {
   workspace.classList.toggle('no-sidebar', state.step === 'layout' && !inRoom);
   roomTitle.textContent = state.layout?.name ?? '';
 
-  if (state.step === 'warehouse' && !scene3d) scene3d = createScene(document.getElementById('viewport3d'));
+  if (state.step === 'warehouse') {
+    scene3d ??= createWarehouse3d(document.getElementById('viewport3d'), { getReplay: () => getState().lastPlacements });
+    if (drawn.layout !== state.layout || drawn.slots !== state.slots) {
+      drawn = { layout: state.layout, slots: state.slots };
+      scene3d.update(state.layout, state.slots);
+    }
+    // Màn Nhập hàng đã xếp xong và chuyển sang đây: cho pallet bay vào đúng thứ tự server đã xếp (một lần).
+    if (state.pendingPlacements) {
+      const placements = state.pendingPlacements;
+      setState({ pendingPlacements: null });
+      scene3d.play(placements);
+    }
+  }
 
   statusMessage.textContent = state.message?.text ?? '';
   statusMessage.className = state.message?.kind === 'error' ? 'error' : '';

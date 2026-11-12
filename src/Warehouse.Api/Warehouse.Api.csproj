@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <Content Update="SampleData\sample-layout.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Update="SampleData\sample-batches.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

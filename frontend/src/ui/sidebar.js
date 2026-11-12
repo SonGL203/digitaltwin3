@@ -1,10 +1,11 @@
 import {
-  addObstacle, clearPreview, nextRackCode, previewRack, rackToRequest, removeObstacle, removeRack, saveRack, saveRoom,
+  addObstacle, clearPreview, discardDraft, nextRackCode, previewRack, rackToRequest, removeObstacle, removeRack,
+  saveDraft, saveRack, saveRoom, updateObstacle,
 } from '../state/actions.js';
 import { getState, selectedObstacle, selectedRack, setState, subscribe } from '../state/store.js';
 import { formatInt, formatMeters } from './format.js';
 
-// Bảng bên trái: nhập và sửa cấu hình. Mọi ô nhập đều gửi lên server; đúng sai do server trả lời.
+// Bảng bên trái: nhập và sửa cấu hình. Mọi ô nhập chỉ sửa BẢN NHÁP; nút Lưu nháp ở đầu bảng mới gửi lên server.
 //
 // Vẽ lại form chỉ khi dữ liệu thật đổi (tải lại mặt bằng, đổi kệ đang chọn…), KHÔNG vẽ lại mỗi lần state đổi:
 // nếu vẽ lại khi bóng mờ cập nhật thì ô đang gõ bị xoá mất. Phần thay đổi liên tục (kết quả kiểm tra thử)
@@ -35,16 +36,28 @@ export function createSidebar(root) {
 
   // ---------- nội dung ----------
   function html(state) {
-    if (state.step !== 'layout') return '<p class="hint">Bước này làm ở Ngày 3.</p>';
+    if (state.step === 'warehouse') return '<p class="hint">Kho 3D: xem phòng đã lưu, mỗi khung có hàng tô màu theo type pallet. Nhập lô ở bảng bên phải rồi bấm Xác nhận và xếp: pallet bay vào ngay trong cảnh.</p>';
+    if (state.step !== 'layout') return '';
     const room = state.layout;
     if (!room) return `<p class="hint">${state.loading ? 'Đang tải mặt bằng…' : 'Chưa có phòng.'}</p>`;
 
     return `
+      ${draftBar()}
       ${roomForm(room)}
       ${selectedSection(state)}
       ${rackList(room, state)}
       ${newRackForm(state.newRack)}
       ${obstacleSection(room, state)}
+    `;
+  }
+
+  function draftBar() {
+    return `
+      <div class="draft-bar">
+        <span class="draft-status" data-role="draft-status"></span>
+        <button type="button" data-action="discard-draft">Bỏ thay đổi</button>
+        <button type="button" class="primary" data-action="save-draft">Lưu nháp</button>
+      </div>
     `;
   }
 
@@ -59,9 +72,9 @@ export function createSidebar(root) {
           ${num('gridSize', 'Lưới (m)', room.gridSize, 0.05, 0.05)}
           ${num('minGap', 'Lối đi tối thiểu (m)', room.minGap, 0, 0.1)}
           ${num('margin', 'Khoảng hở đỉnh (m)', room.margin, 0, 0.01)}
-          <div class="form-actions"><button type="submit">Lưu phòng</button></div>
+          <div class="form-actions"><button type="submit">Áp dụng</button></div>
         </form>
-        <p class="hint">Đổi lưới không làm kệ nào di chuyển. Thu nhỏ phòng hoặc tăng lối đi thì server kiểm tra lại mọi kệ.</p>
+        <p class="hint">Đổi lưới không làm kệ nào di chuyển. Thu nhỏ phòng hoặc tăng lối đi thì server kiểm tra lại mọi kệ khi lưu nháp.</p>
       </details>
     `;
   }
@@ -74,11 +87,17 @@ export function createSidebar(root) {
       return `
         <section class="section-plain">
           <h2>${obstacle.kind === 'Wall' ? 'Tường' : 'Cột'} đang chọn</h2>
-          <dl>
-            <dt>Vị trí (x; y)</dt><dd>${formatMeters(obstacle.x)}; ${formatMeters(obstacle.y)} m</dd>
-            <dt>Kích thước</dt><dd>${formatMeters(obstacle.width)} × ${formatMeters(obstacle.depth)} m</dd>
-          </dl>
-          <div class="form-actions"><button type="button" class="danger" data-remove-obstacle="${obstacle.id}">Xoá</button></div>
+          <form data-form="obstacle-edit" class="grid-form">
+            ${num('x', 'X (m)', obstacle.x, 0, 0.1)}
+            ${num('y', 'Y (m)', obstacle.y, 0, 0.1)}
+            ${num('width', 'Dài (m)', obstacle.width, 0.01, 0.1)}
+            ${num('depth', 'Rộng (m)', obstacle.depth, 0.01, 0.1)}
+            <p class="live full" data-live="obstacle-check"></p>
+            <div class="form-actions">
+              <button type="button" class="danger push-left" data-remove-obstacle="${obstacle.id}">Xoá</button>
+              <button type="submit">Áp dụng</button>
+            </div>
+          </form>
         </section>
       `;
     }
@@ -88,30 +107,30 @@ export function createSidebar(root) {
   function rackEditForm(r) {
     return `
       <section class="section-plain">
-        <h2>Kệ ${escapeHtml(r.code)} · ${r.slotCount} khung</h2>
+        <h2>Kệ ${escapeHtml(r.code)} · ${slots(r.slotCount)}</h2>
         <form data-form="rack" class="grid-form">
           ${rackFields(r)}
           <p class="live full" data-live="rack-check"></p>
           <div class="form-actions">
             <button type="button" class="danger push-left" data-action="remove-rack">Xoá kệ</button>
             <button type="button" data-action="cancel-rack">Huỷ</button>
-            <button type="submit">Lưu kệ</button>
+            <button type="submit">Áp dụng</button>
           </div>
         </form>
-        <p class="hint">Chiếm chỗ ${formatMeters(r.footprintWidth)} × ${formatMeters(r.footprintDepth)} m. Sửa xong thì khung được sinh lại; kệ đang có hàng thì không sửa được.</p>
+        <p class="hint">Chiếm chỗ ${formatMeters(r.footprintWidth)} × ${formatMeters(r.footprintDepth)} m. Khung được sinh lại khi lưu nháp; kệ đang có hàng thì chỉ dời/xoay được.</p>
       </section>
     `;
   }
 
   function rackList(room, state) {
-    const totalSlots = room.racks.reduce((sum, r) => sum + r.slotCount, 0);
+    const totalSlots = room.racks.reduce((sum, r) => sum + (r.slotCount ?? 0), 0);
     return `
       <details class="section" open>
         <summary>Kệ (${room.racks.length}) · ${formatInt(totalSlots)} khung</summary>
         <ul class="rack-list">
           ${room.racks.map((r) => `
             <li><button type="button" data-rack-id="${r.id}" aria-pressed="${r.id === state.selectedRackId}">
-              <span>${escapeHtml(r.code)}</span><span class="muted">${r.slotCount} khung</span>
+              <span>${escapeHtml(r.code)}</span><span class="muted">${slots(r.slotCount)}</span>
             </button></li>`).join('')}
         </ul>
       </details>
@@ -180,7 +199,19 @@ export function createSidebar(root) {
   }
 
   // ---------- phần cập nhật liên tục ----------
+  function updateDraftBar(state) {
+    const status = root.querySelector('[data-role="draft-status"]');
+    if (!status) return;
+    if (state.saving) status.textContent = 'Đang lưu…';
+    else if (!state.dirty) status.textContent = 'Đã lưu';
+    else status.textContent = state.draftIssue ? `Chưa lưu · ${state.draftIssue}` : 'Có thay đổi chưa lưu';
+    status.className = 'draft-status' + (state.dirty ? (state.draftIssue ? ' error' : ' dirty') : '');
+    root.querySelector('[data-action="save-draft"]').disabled = !state.dirty || state.saving;
+    root.querySelector('[data-action="discard-draft"]').disabled = !state.dirty || state.saving;
+  }
+
   function updateLive(state) {
+    updateDraftBar(state);
     const line = root.querySelector('[data-live="rack-check"]');
     if (!line) return;
     const p = state.preview;
@@ -209,6 +240,8 @@ export function createSidebar(root) {
       const obstacle = getState().layout?.obstacles.find((o) => o.id === Number(t.dataset.removeObstacle));
       if (obstacle) removeObstacle(obstacle);
     }
+    if (t.dataset.action === 'save-draft') saveDraft();
+    if (t.dataset.action === 'discard-draft') discardDraft();
     if (t.dataset.action === 'remove-rack' && selectedRack()) removeRack(selectedRack());
     if (t.dataset.action === 'place-rack') {
       clearPreview();
@@ -249,6 +282,9 @@ export function createSidebar(root) {
       const rack = selectedRack();
       if (rack) await saveRack(rack, { ...rackToRequest(rack), ...values });
       clearPreview();
+    } else if (form.dataset.form === 'obstacle-edit') {
+      const obstacle = selectedObstacle();
+      if (obstacle) updateObstacle(obstacle, values);
     } else if (form.dataset.form === 'obstacle') {
       await addObstacle(values);
     }
@@ -259,6 +295,11 @@ export function createSidebar(root) {
 }
 
 // ---------- tiện ích ----------
+
+/** Số khung; null = chưa biết (kệ mới hoặc vừa đổi cấu hình, server sinh khi lưu nháp). */
+function slots(count) {
+  return count == null ? 'chưa lưu' : `${count} khung`;
+}
 
 function num(name, label, value, min, step, type = 'number') {
   // Số thực: step="any". Nếu để step="0.1" cùng min="0.01" thì trình duyệt chỉ nhận 0,01; 0,11; 0,21…

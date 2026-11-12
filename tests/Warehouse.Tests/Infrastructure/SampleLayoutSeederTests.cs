@@ -42,4 +42,39 @@ public class SampleLayoutSeederTests
         Assert.Equal(8, store.GetRooms().Single().Racks.Count);
         Assert.Equal(108, store.GetAllSlots().Count);
     }
+
+    private static readonly string BatchesPath =
+        Path.Combine(AppContext.BaseDirectory, "SampleData", "sample-batches.json");
+
+    [Fact]
+    public void Seed_WithBatchesFile_ReceivesAndAllocatesThreeLots()
+    {
+        var store = new InMemoryWarehouseStore();
+        var layout = new LayoutService(store);
+        var pallets = new PalletService(store);
+
+        SampleLayoutSeeder.Seed(layout, NullLogger.Instance, SamplePath, pallets, BatchesPath);
+
+        Assert.Equal(3, store.CountBatches());
+        var placed = store.GetAllSlots().Count(s => s.PalletId is not null);
+        Assert.InRange(placed, 30, 108);   // đa số pallet có khung, nhưng không vượt tổng số khung
+        // Lô 3 có 2 pallet 1,5 × 1,5 m không kệ nào chứa được: chúng ở lại trong lô, chưa có khung.
+        var batch3 = store.GetBatch(3)!;
+        Assert.Equal(12, batch3.Pallets.Count);
+        var placedIds = store.GetAllSlots().Where(s => s.PalletId is not null).Select(s => s.PalletId!.Value).ToHashSet();
+        Assert.Equal(2, batch3.Pallets.Count(p => !placedIds.Contains(p.Id)));
+    }
+
+    [Fact]
+    public void Seed_RoomAlreadyExists_DoesNotAddLots()
+    {
+        var store = new InMemoryWarehouseStore();
+        var layout = new LayoutService(store);
+        var pallets = new PalletService(store);
+        SampleLayoutSeeder.Seed(layout, NullLogger.Instance, SamplePath);   // phòng có sẵn, chưa có lô
+
+        SampleLayoutSeeder.Seed(layout, NullLogger.Instance, SamplePath, pallets, BatchesPath);
+
+        Assert.Equal(0, store.CountBatches());
+    }
 }

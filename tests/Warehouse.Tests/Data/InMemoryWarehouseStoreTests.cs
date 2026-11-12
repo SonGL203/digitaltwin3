@@ -110,7 +110,7 @@ public class InMemoryWarehouseStoreTests
     }
 
     [Fact]
-    public void GetSlotsOfRack_ReturnsOnlyThatRacksSlots()
+    public void GetSlotsOfRacks_ReturnsOnlyTheRequestedRacksSlots()
     {
         var store = new InMemoryWarehouseStore();
         var room = MakeRoom();
@@ -124,7 +124,7 @@ public class InMemoryWarehouseStoreTests
         store.AddSlots(k1.CreateSlots());
         store.AddSlots(k2.CreateSlots());
 
-        var ofK1 = store.GetSlotsOfRack(k1.Id);
+        var ofK1 = store.GetSlotsOfRacks([k1.Id]);
 
         Assert.Equal(4, ofK1.Count);
         Assert.All(ofK1, s => Assert.StartsWith("K1-", s.Code));
@@ -146,8 +146,8 @@ public class InMemoryWarehouseStoreTests
 
         store.RemoveSlotsOfRack(k1.Id);
 
-        Assert.Empty(store.GetSlotsOfRack(k1.Id));
-        Assert.Equal(4, store.GetSlotsOfRack(k2.Id).Count);
+        Assert.Empty(store.GetSlotsOfRacks([k1.Id]));
+        Assert.Equal(4, store.GetSlotsOfRacks([k2.Id]).Count);
     }
 
     [Fact]

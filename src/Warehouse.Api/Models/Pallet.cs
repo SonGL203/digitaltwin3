@@ -15,6 +15,17 @@ public class Pallet
     public string Code { get; private set; }
     public int? ProductTypeId { get; private set; }
 
+    // EF Core không nạp được thuộc tính điều hướng (Size) qua constructor, nên cần constructor riêng chỉ có giá trị đơn
+    // (tên tham số trùng tên thuộc tính). EF gán Size sau theo SizeId. Chỉ EF dùng, nên private.
+    private Pallet(int batchId, int sizeId, string code, int? productTypeId)
+    {
+        BatchId = batchId;
+        SizeId = sizeId;
+        Code = code;
+        ProductTypeId = productTypeId;
+        Size = null!;
+    }
+
     public Pallet(int batchId, PalletSize size, string code, int? productTypeId = null)
     {
         ArgumentNullException.ThrowIfNull(size);

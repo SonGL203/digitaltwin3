@@ -1,21 +1,29 @@
 import { api, ApiError } from '../api/client.js';
+import { askConfirm } from '../ui/confirm.js';
 
 // Trạng thái dùng chung của giao diện. Một chỗ giữ dữ liệu, các phần (danh sách phòng, editor 2D, bảng bên,
 // thanh trạng thái) đăng ký nghe thay đổi rồi tự vẽ lại. Không dùng framework: dự án nhỏ, một hàm subscribe là đủ.
 //
-// layout: đúng như GET /api/rooms/{id} trả về (mét). Frontend không sửa layout tại chỗ; muốn đổi thì gọi API
-// rồi tải lại, để màn hình luôn khớp database.
+// layout: BẢN NHÁP của phòng đang mở, cùng dạng với GET /api/rooms/{id} (mét). Mọi thao tác vẽ chỉ sửa bản nháp này
+// (xem actions.js); bấm "Lưu nháp" mới gửi lên server (PUT /layout), rồi tải lại để khớp database.
+// Đối tượng mới vẽ chưa có Id của server nên mang Id TẠM ÂM (-1, -2…); lúc lưu gửi id = null.
 
 const state = {
-  step: 'layout',          // 'layout' | 'warehouse' | 'receive'
+  step: 'layout',          // 'layout' | 'warehouse' (kho 3D có bảng nhập hàng gắn bên phải)
 
   rooms: [],               // danh sách phòng (tóm tắt) cho màn chọn phòng
   roomsLoaded: false,
   currentRoomId: null,     // phòng đang mở trong editor; null = đang ở màn danh sách phòng
 
   layout: null,            // phòng đang mở (đủ kệ, vật cản), null khi chưa mở phòng nào
-  layoutVersion: 0,        // tăng mỗi lần tải lại: bảng bên dựa vào đây để biết khi nào vẽ lại form
+  layoutVersion: 0,        // tăng mỗi lần bản nháp đổi: bảng bên dựa vào đây để biết khi nào vẽ lại form
   loading: false,
+  dirty: false,            // bản nháp có thay đổi chưa lưu
+  saving: false,
+  lastPlacements: null,    // kết quả xếp gần nhất của phòng đang mở: nút "Phát lại" ở cảnh 3D dùng để xem lại pallet bay
+  pendingPlacements: null, // danh sách pallet cần cho bay vào khung khi sang cảnh 3D (do màn Nhập hàng đặt, cảnh 3D lấy rồi xoá)
+  slots: [],               // khung của phòng đang mở (kèm pallet/type/màu), cho cảnh 3D
+  draftIssue: null,        // lỗi đầu tiên khi kiểm tra cả bản nháp ("K3: Kệ đè cột…"), null = ổn
   selectedRackId: null,
   selectedObstacleId: null,
   showGrid: true,
@@ -52,6 +60,35 @@ export function setState(patch) {
   for (const listener of listeners) listener(state);
 }
 
+/**
+ * Chuyển bước. Sang bước 3D/nhập hàng khi bản nháp chưa lưu thì chặn: các bước đó đọc dữ liệu ĐÃ LƯU trên server,
+ * nên kệ mới vẽ sẽ không có khung. Về bước Mặt bằng thì luôn được.
+ */
+export function goToStep(step, { reload = true } = {}) {
+  if (step !== 'layout' && state.dirty) {
+    showMessage('Bản nháp chưa lưu: bấm Lưu nháp trước khi sang bước này.', 'error');
+    return;
+  }
+  setState({ step, message: null });
+  // Đang chờ phát hiệu ứng thì khung vừa được tải xong (màn Nhập hàng tải sau khi xếp): tải lại sẽ dựng lại cảnh và cắt ngang hiệu ứng.
+  if (step === 'warehouse' && reload && !state.pendingPlacements) loadSlots();
+}
+
+/** Tải khung của phòng đang mở (kèm pallet đang nằm trong khung). Chưa mở phòng thì để rỗng. */
+export async function loadSlots() {
+  const roomId = state.currentRoomId;
+  if (roomId == null) {
+    setState({ slots: [] });
+    return;
+  }
+  try {
+    const slots = await api.listSlots(roomId);
+    if (state.currentRoomId === roomId) setState({ slots });
+  } catch (err) {
+    showMessage(err.message, 'error');
+  }
+}
+
 export function showMessage(text, kind = 'info') {
   setState({ message: { text, kind } });
 }
@@ -70,19 +107,67 @@ export async function loadRooms() {
 
 /** Mở một phòng trong editor. Đổi phòng thì bỏ chọn, bỏ bóng mờ, về công cụ Chọn. */
 export async function openRoom(roomId) {
+  if (!await confirmDiscard()) return;
   if (location.hash !== `#/rooms/${roomId}`) history.pushState(null, '', `#/rooms/${roomId}`);
   setState({
-    currentRoomId: roomId, layout: null, selectedRackId: null, selectedObstacleId: null,
-    preview: null, tool: 'select', message: null,
+    currentRoomId: roomId, layout: null, slots: [], lastPlacements: null, pendingPlacements: null, selectedRackId: null, selectedObstacleId: null,
+    preview: null, tool: 'select', message: null, dirty: false, draftIssue: null,
   });
   await loadLayout();
 }
 
 /** Về màn danh sách phòng (tải lại danh sách vì số kệ, tên… có thể vừa đổi). */
 export async function closeRoom() {
+  if (!await confirmDiscard()) return;
   if (location.hash !== '#/rooms') history.pushState(null, '', '#/rooms');
-  setState({ currentRoomId: null, layout: null, preview: null, tool: 'select', message: null });
+  setState({
+    currentRoomId: null, layout: null, slots: [], lastPlacements: null, pendingPlacements: null, preview: null, tool: 'select', message: null, dirty: false, draftIssue: null,
+  });
   await loadRooms();
+}
+
+/** Còn thay đổi chưa lưu thì hỏi trước khi rời phòng. Bấm Huỷ: trả false và đưa địa chỉ trang về phòng đang mở. */
+async function confirmDiscard() {
+  if (!state.dirty) return true;
+  if (await askConfirm('Bản nháp có thay đổi chưa lưu. Bỏ các thay đổi và rời phòng?', { okText: 'Bỏ và rời phòng', danger: true })) {
+    clearStoredDraft(state.currentRoomId);
+    return true;
+  }
+  if (state.currentRoomId != null && location.hash !== `#/rooms/${state.currentRoomId}`) {
+    history.pushState(null, '', `#/rooms/${state.currentRoomId}`);
+  }
+  return false;
+}
+
+// Đóng tab / tải lại trang khi còn thay đổi chưa lưu: trình duyệt tự hỏi lại.
+window.addEventListener('beforeunload', (e) => {
+  if (state.dirty) e.preventDefault();
+});
+
+// ---------- bản nháp tự lưu trong trình duyệt ----------
+// Chỉ để không mất công vẽ khi lỡ đóng tab; KHÔNG phải là lưu thật (chưa lên server, chỉ máy này thấy).
+// Mọi lệnh đọc/ghi bọc try/catch vì localStorage có thể bị chặn (cửa sổ ẩn danh…); lỗi thì bỏ qua, không ảnh hưởng gì.
+const draftKey = (roomId) => `warehouse-draft:${roomId}`;
+
+export function storeDraft() {
+  try {
+    if (state.layout && state.dirty) localStorage.setItem(draftKey(state.currentRoomId), JSON.stringify(state.layout));
+  } catch { /* bỏ qua */ }
+}
+
+export function clearStoredDraft(roomId) {
+  try {
+    localStorage.removeItem(draftKey(roomId));
+  } catch { /* bỏ qua */ }
+}
+
+function readStoredDraft(roomId) {
+  try {
+    const text = localStorage.getItem(draftKey(roomId));
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Đọc địa chỉ trang rồi mở đúng màn: #/rooms/3 → phòng 3, còn lại → danh sách. */
@@ -92,15 +177,30 @@ export function syncWithAddress() {
 }
 
 /** Tải lại phòng đang mở từ server. Phòng không còn (ví dụ gõ sai Id trên địa chỉ) thì quay về danh sách. */
+let loadingRoomId = null;   // phòng đang được tải: tránh hai lần tải chồng nhau (mỗi lần lại hỏi khôi phục nháp)
+
 export async function loadLayout() {
   const roomId = state.currentRoomId;
-  if (roomId == null) return;
+  if (roomId == null || loadingRoomId === roomId) return;
+  loadingRoomId = roomId;
   setState({ loading: true });
   try {
     const layout = await api.getRoom(roomId);
     if (state.currentRoomId !== roomId) return;   // người dùng đã chuyển phòng khác trong lúc chờ
+
+    // Có bản nháp chưa lưu từ lần trước (cùng phiên bản phòng) thì hỏi có muốn khôi phục không.
+    // Khác phiên bản nghĩa là phòng đã đổi ở nơi khác, bản nháp cũ không còn đúng nên bỏ.
+    let draft = null;
+    const stored = readStoredDraft(roomId);
+    if (stored) {
+      if (stored.version === layout.version && await askConfirm('Có bản nháp chưa lưu từ lần trước. Khôi phục?', { okText: 'Khôi phục', cancelText: 'Bỏ bản nháp' })) draft = stored;
+      else clearStoredDraft(roomId);
+    }
+
     setState({
-      layout,
+      layout: draft ?? layout,
+      dirty: draft !== null,
+      draftIssue: null,
       layoutVersion: state.layoutVersion + 1,
       loading: false,
       selectedRackId: layout.racks.some((r) => r.id === state.selectedRackId) ? state.selectedRackId : null,
@@ -112,6 +212,8 @@ export async function loadLayout() {
       await closeRoom();
     }
     showMessage(err.message, 'error');
+  } finally {
+    loadingRoomId = null;
   }
 }
 

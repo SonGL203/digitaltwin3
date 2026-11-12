@@ -21,6 +21,13 @@ public class Obstacle
 
     public Obstacle(int roomId, ObstacleKind kind, double x, double y, double width, double depth)
     {
+        RoomId = roomId;
+        Reconfigure(kind, x, y, width, depth);
+    }
+
+    /// <summary>Đổi loại, vị trí, kích thước. Kiểm tra HẾT rồi mới gán, để số sai không làm vật cản bị sửa dở.</summary>
+    public void Reconfigure(ObstacleKind kind, double x, double y, double width, double depth)
+    {
         if (x < 0)
             throw new ArgumentException("Toạ độ X không được âm.", nameof(x));
         if (y < 0)
@@ -30,7 +37,6 @@ public class Obstacle
         if (depth <= 0)
             throw new ArgumentException("Chiều rộng vật cản phải lớn hơn 0.", nameof(depth));
 
-        RoomId = roomId;
         Kind = kind;
         X = x;
         Y = y;

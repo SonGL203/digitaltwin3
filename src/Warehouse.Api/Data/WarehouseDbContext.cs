@@ -21,6 +21,10 @@ public class WarehouseDbContext(DbContextOptions<WarehouseDbContext> options) : 
     public DbSet<Rack> Racks => Set<Rack>();
     public DbSet<Obstacle> Obstacles => Set<Obstacle>();
     public DbSet<Slot> Slots => Set<Slot>();
+    public DbSet<PalletSize> PalletSizes => Set<PalletSize>();
+    public DbSet<ProductType> ProductTypes => Set<ProductType>();
+    public DbSet<Batch> Batches => Set<Batch>();
+    public DbSet<Pallet> Pallets => Set<Pallet>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -82,7 +86,70 @@ public class WarehouseDbContext(DbContextOptions<WarehouseDbContext> options) : 
             // thì cùng có khung K1-T1-R1.
             slot.HasIndex(s => new { s.RackId, s.Code }).IsUnique();
 
-            // PalletId chưa có khoá ngoại vì bảng Pallet chưa map; thêm ở ngày 3.
+            // Khung trỏ tới pallet nó đang giữ. Restrict: không cho xoá pallet khi còn khung trỏ tới (phải Remove() khung trước).
+            slot.HasOne<Pallet>()
+                .WithMany()
+                .HasForeignKey(s => s.PalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Một pallet chỉ nằm trong một khung. Khung trống (PalletId null) không bị ràng buộc: PostgreSQL cho nhiều NULL.
+            slot.HasIndex(s => s.PalletId).IsUnique();
+        });
+
+        // Type pallet (A, B, …) do PalletSizer sinh, dùng chung cho mọi phòng; mã không trùng.
+        model.Entity<PalletSize>(size =>
+        {
+            size.HasKey(s => s.Id);
+            size.Property(s => s.Code).IsRequired().HasMaxLength(10);
+            size.Property(s => s.Color).IsRequired().HasMaxLength(20);
+            size.HasIndex(s => s.Code).IsUnique();
+        });
+
+        model.Entity<ProductType>(type =>
+        {
+            type.HasKey(t => t.Id);
+            type.Property(t => t.Code).IsRequired().HasMaxLength(20);
+            type.Property(t => t.Name).IsRequired().HasMaxLength(50);
+            type.HasIndex(t => t.Code).IsUnique();
+        });
+
+        // Kệ chuyên loại hàng: Restrict, không xoá được loại hàng khi còn kệ/pallet dùng.
+        model.Entity<Rack>()
+            .HasOne<ProductType>()
+            .WithMany()
+            .HasForeignKey(k => k.ProductTypeId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        model.Entity<Batch>(batch =>
+        {
+            batch.HasKey(b => b.Id);
+            batch.Property(b => b.Code).IsRequired().HasMaxLength(20);
+            batch.HasIndex(b => b.Code).IsUnique();
+            // ReceivedAt là DateTime: Npgsql chỉ nhận Kind = Utc cho timestamptz, nên service luôn dùng DateTime.UtcNow.
+
+            // Xoá lô thì xoá pallet của lô (khung đang giữ pallet vẫn chặn nhờ Restrict ở trên).
+            batch.HasMany(b => b.Pallets)
+                 .WithOne()
+                 .HasForeignKey(p => p.BatchId)
+                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<Pallet>(pallet =>
+        {
+            pallet.HasKey(p => p.Id);
+            pallet.Property(p => p.Code).IsRequired().HasMaxLength(30);
+            pallet.HasIndex(p => p.Code).IsUnique();
+
+            // Pallet trỏ tới type; Size là thuộc tính điều hướng (không có trong constructor công khai).
+            pallet.HasOne(p => p.Size)
+                  .WithMany()
+                  .HasForeignKey(p => p.SizeId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            pallet.HasOne<ProductType>()
+                  .WithMany()
+                  .HasForeignKey(p => p.ProductTypeId)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

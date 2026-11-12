@@ -1,9 +1,11 @@
 import { api } from '../api/client.js';
-import { getState, loadLayout, setState, showMessage } from './store.js';
+import { askConfirm } from '../ui/confirm.js';
+import { clearStoredDraft, getState, loadLayout, setState, showMessage, storeDraft } from './store.js';
 
-// Các hành động của người dùng: gọi API → tải lại mặt bằng → báo kết quả.
-// Không có luật nghiệp vụ ở đây: đặt được hay không, chiếm chỗ bao nhiêu, bao nhiêu khung… đều do server trả lời.
-// Frontend chỉ lo những việc của giao diện: snap theo lưới, sinh mã kệ mới, chờ (debounce) khi gọi validate.
+// Các hành động của người dùng. Mọi thao tác vẽ chỉ sửa BẢN NHÁP trong bộ nhớ (state.layout); không có lời gọi
+// server nào cho tới khi bấm "Lưu nháp". Không có luật nghiệp vụ ở đây: đặt được hay không, chiếm chỗ bao nhiêu,
+// bao nhiêu khung… đều do server trả lời (validateLayout cho bóng mờ, saveLayout kiểm tra lần cuối).
+// Frontend chỉ lo việc của giao diện: snap theo lưới, sinh mã kệ mới, Id tạm, chờ (debounce) khi gọi validate.
 
 const VALIDATE_DELAY_MS = 120;   // chờ chuột dừng một chút rồi mới hỏi server, không gửi mỗi lần chuột nhích
 
@@ -12,7 +14,7 @@ const VALIDATE_DELAY_MS = 120;   // chờ chuột dừng một chút rồi mới
 /** Phòng đang mở: mọi API mặt bằng đều nằm dưới /rooms/{roomId}. */
 const roomId = () => getState().currentRoomId;
 
-/** Đổi kệ server trả về thành RackRequest để gửi lại (PUT, validate). */
+/** Đổi kệ trong bản nháp thành RackRequest để gửi lên (validate, lưu). */
 export function rackToRequest(r) {
   return {
     code: r.code, x: r.x, y: r.y, rotation: r.rotation,
@@ -30,13 +32,86 @@ export function snap(value) {
   return Math.max(0, Number((Math.round(value / grid) * grid).toFixed(3)));
 }
 
-/** Mã kệ mới: K + (số lớn nhất đang có + 1). Frontend phải tự sinh vì validate coi kệ cùng mã là "dời kệ". */
+/** Mã kệ mới: K + (số lớn nhất đang có trong bản nháp + 1). Phải tự sinh vì hai kệ cùng mã bị server từ chối. */
 export function nextRackCode() {
   const numbers = (getState().layout?.racks ?? [])
     .map((r) => /^K(\d+)$/i.exec(r.code)?.[1])
     .filter(Boolean)
     .map(Number);
   return `K${Math.max(0, ...numbers) + 1}`;
+}
+
+// ---------- bản nháp ----------
+
+let tempId = 0;
+const newTempId = () => --tempId;   // -1, -2, … không bao giờ trùng Id thật (luôn dương)
+
+/** Bản nháp dạng request gửi server. Đối tượng mới (Id âm) gửi id = null. */
+export function toLayoutRequest(layout) {
+  return {
+    name: layout.name, width: layout.width, depth: layout.depth,
+    gridSize: layout.gridSize, minGap: layout.minGap, margin: layout.margin,
+    version: layout.version,
+    obstacles: layout.obstacles.map((o) => ({
+      id: o.id > 0 ? o.id : null, kind: o.kind, x: o.x, y: o.y, width: o.width, depth: o.depth,
+    })),
+    racks: layout.racks.map((r) => ({ id: r.id > 0 ? r.id : null, ...rackToRequest(r) })),
+  };
+}
+
+/** Bản nháp với một kệ được thay bằng `request` (kệ có Id rackId), hoặc thêm vào nếu rackId = null. Không sửa state. */
+function draftWith(request, rackId) {
+  const layout = getState().layout;
+  const racks = rackId == null
+    ? [...layout.racks, { ...request, id: newTempId() }]
+    : layout.racks.map((r) => (r.id === rackId ? { ...r, ...request } : r));
+  return { ...layout, racks };
+}
+
+let draftCheckTimer = null;
+
+/** Sau mỗi thay đổi: hỏi server kiểm tra cả bản nháp, lấy kích thước chiếm chỗ mới cho từng kệ và lỗi đầu tiên (nếu có). */
+function scheduleDraftCheck() {
+  clearTimeout(draftCheckTimer);
+  draftCheckTimer = setTimeout(async () => {
+    const layout = getState().layout;
+    if (!layout) return;
+    try {
+      const check = await api.validateLayout(roomId(), toLayoutRequest(layout));
+      if (getState().layout !== layout) return;   // bản nháp đã đổi tiếp: kết quả này cũ, lần hỏi sau sẽ thay
+      // Cập nhật kích thước chiếm chỗ tại chỗ, không bump layoutVersion để bảng bên không vẽ lại form đang gõ.
+      for (const r of layout.racks) {
+        const c = check.racks.find((x) => x.code.toLowerCase() === r.code.toLowerCase());
+        if (c) {
+          r.footprintWidth = c.footprintWidth;
+          r.footprintDepth = c.footprintDepth;
+        }
+      }
+      setState({ draftIssue: check.isValid ? null : check.reason });
+    } catch {
+      /* mất mạng: bỏ qua, lúc Lưu nháp sẽ báo */
+    }
+  }, 250);
+}
+
+/** Sửa bản nháp: nhân bản state.layout, áp `change`, đánh dấu chưa lưu. Nhân bản để chỗ so sánh theo tham chiếu thấy đổi. */
+function edit(change) {
+  const layout = structuredClone(getState().layout);
+  change(layout);
+  setState({ layout, dirty: true, layoutVersion: getState().layoutVersion + 1 });
+  storeDraft();
+  scheduleDraftCheck();
+}
+
+function patchRack(rack, patch) {
+  edit((layout) => {
+    const r = layout.racks.find((k) => k.id === rack.id);
+    if (!r) return;
+    const next = { ...r, ...patch };
+    // Server sinh lại khung khi số tầng/ô/nóc đổi, nên số khung chưa biết cho tới khi lưu.
+    if (next.levels !== r.levels || next.bays !== r.bays || next.hasTop !== r.hasTop) r.slotCount = null;
+    Object.assign(r, patch);
+  });
 }
 
 // ---------- bóng mờ (kiểm tra thử) ----------
@@ -49,8 +124,9 @@ function sameShape(a, b) {
 }
 
 /**
- * Hiện bóng mờ cho một kệ rồi hỏi server POST /racks/validate. Bóng xám khi đang chờ, xanh/đỏ khi có trả lời.
- * Kích thước bóng lấy từ server (footprintWidth/Depth); frontend không tự tính, kể cả khi xoay.
+ * Hiện bóng mờ cho một kệ rồi hỏi server POST /layout/validate. Bóng xám khi đang chờ, xanh/đỏ khi có trả lời.
+ * Server được hỏi theo CẢ BẢN NHÁP (kệ đang kéo được thay bằng vị trí của bóng): kéo sát một kệ vừa dời mà chưa lưu
+ * vẫn tính đúng. Kích thước bóng lấy từ server (footprintWidth/Depth); frontend không tự tính, kể cả khi xoay.
  * footprint: gợi ý ban đầu lấy từ chính dữ liệu server (ví dụ kệ đang dời), để bóng hiện ngay không phải chờ.
  */
 export function previewRack(request, { rackId = null, source, footprint = null } = {}) {
@@ -67,16 +143,20 @@ export function previewRack(request, { rackId = null, source, footprint = null }
   const seq = ++validateSeq;
   validateTimer = setTimeout(async () => {
     try {
-      const check = await api.validateRack(roomId(), request);
+      const check = await api.validateLayout(roomId(), toLayoutRequest(draftWith(request, rackId)));
       if (seq !== validateSeq) return;
+      const mine = check.racks.find((r) => r.code.toLowerCase() === request.code.toLowerCase());
       setState({
-        preview: {
-          ...getState().preview,
-          isValid: check.isValid,
-          reason: check.reason,
-          footprintWidth: check.footprintWidth,
-          footprintDepth: check.footprintDepth,
-        },
+        preview: mine
+          ? {
+            ...getState().preview,
+            isValid: mine.isValid,
+            reason: mine.reason,
+            footprintWidth: mine.footprintWidth,
+            footprintDepth: mine.footprintDepth,
+          }
+          // Bản nháp có lỗi cấu trúc (ví dụ trùng mã): không có kết quả riêng cho kệ này, hiện lý do chung.
+          : { ...getState().preview, isValid: false, reason: check.reason },
       });
     } catch (err) {
       // Ví dụ 400 vì số tầng = 0 ([Range] của ViewModel): coi như đỏ, lý do là câu lỗi của server.
@@ -86,7 +166,7 @@ export function previewRack(request, { rackId = null, source, footprint = null }
   }, VALIDATE_DELAY_MS);
 }
 
-/** Ngừng hỏi server cho bóng mờ hiện tại nhưng vẫn để bóng hiện (ví dụ lúc đang gửi lệnh lưu). */
+/** Ngừng hỏi server cho bóng mờ hiện tại nhưng vẫn để bóng hiện. */
 export function stopPreviewCheck() {
   validateSeq++;
   clearTimeout(validateTimer);
@@ -98,59 +178,93 @@ export function clearPreview() {
   if (getState().preview) setState({ preview: null });
 }
 
-// ---------- ghi ----------
+// ---------- sửa bản nháp (chưa gọi server) ----------
 
-/** Gọi API ghi; thành công thì tải lại mặt bằng và báo; lỗi thì hiện câu lý do của server. */
-async function run(action, success) {
-  try {
-    const result = await action();
-    await loadLayout();
-    showMessage(typeof success === 'function' ? success(result) : success);
-    return result;
-  } catch (err) {
-    showMessage(err.message, 'error');
-    return null;
-  }
+export const moveRack = (rack, x, y, rotation) => patchRack(rack, { x, y, rotation });
+
+export const rotateRack = (rack) => patchRack(rack, { rotation: rack.rotation === 90 ? 0 : 90 });
+
+export function saveRack(rack, request) {
+  const { code, ...values } = request;   // mã không đổi được khi sửa
+  patchRack(rack, values);
+  showMessage(`Đã sửa ${rack.code} trong bản nháp (chưa lưu).`);
 }
 
-export const moveRack = (rack, x, y, rotation) =>
-  run(() => api.updateRack(roomId(), rack.id, { ...rackToRequest(rack), x, y, rotation }), `Đã dời ${rack.code}.`);
-
-export const rotateRack = (rack) =>
-  run(() => api.updateRack(roomId(), rack.id, { ...rackToRequest(rack), rotation: rack.rotation === 90 ? 0 : 90 }),
-    `Đã xoay ${rack.code}.`);
-
-export const saveRack = (rack, request) =>
-  run(() => api.updateRack(roomId(), rack.id, request), (r) => `Đã lưu ${rack.code}: ${r.slotCount} khung.`);
-
-export async function addRack(request) {
-  const created = await run(() => api.addRack(roomId(), request), (r) => `Đã đặt kệ ${r.code}.`);
-  if (created) setState({ selectedRackId: created.id, selectedObstacleId: null });
+export function addRack(request) {
+  const created = { ...request, id: newTempId(), slotCount: null, footprintWidth: 0, footprintDepth: 0 };
+  edit((layout) => layout.racks.push(created));
+  setState({ selectedRackId: created.id, selectedObstacleId: null });
+  showMessage(`Đã đặt kệ ${created.code} trong bản nháp (chưa lưu).`);
   return created;
 }
 
-export const saveRoom = (room) => run(() => api.updateRoom(roomId(), room), 'Đã lưu phòng.');
+export function saveRoom(values) {
+  edit((layout) => Object.assign(layout, values));
+  showMessage('Đã sửa phòng trong bản nháp (chưa lưu).');
+}
 
-export async function addObstacle(obstacle) {
-  const created = await run(() => api.addObstacle(roomId(), obstacle),
-    obstacle.kind === 'Wall' ? 'Đã thêm tường.' : 'Đã thêm cột.');
-  if (created) setState({ selectedObstacleId: created.id, selectedRackId: null });
+export function addObstacle(values) {
+  const created = { ...values, id: newTempId() };
+  edit((layout) => layout.obstacles.push(created));
+  setState({ selectedObstacleId: created.id, selectedRackId: null });
+  showMessage(values.kind === 'Wall' ? 'Đã thêm tường (chưa lưu).' : 'Đã thêm cột (chưa lưu).');
   return created;
 }
 
-// Xoá không hoàn tác được: luôn hỏi lại trước. confirm() có sẵn trong trình duyệt, đủ cho đồ án;
-// trả false (bấm Huỷ) thì không gửi gì lên server.
+/** Đổi vị trí/kích thước tường hoặc cột trong bản nháp. Đè kệ hay ra ngoài phòng thì server báo ở dòng cảnh báo / lúc Lưu nháp. */
+export function updateObstacle(obstacle, values) {
+  const { x, y, width, depth } = values;
+  edit((layout) => {
+    const o = layout.obstacles.find((item) => item.id === obstacle.id);
+    if (o) Object.assign(o, { x, y, width, depth });
+  });
+  showMessage(`Đã sửa ${obstacle.kind === 'Wall' ? 'tường' : 'cột'} trong bản nháp (chưa lưu).`);
+}
+
+// Xoá chỉ sửa bản nháp nên "Bỏ thay đổi" lấy lại được; vẫn hỏi trước vì xoá nhầm kệ rất mất công vẽ lại.
 
 export async function removeObstacle(obstacle) {
   const what = obstacle.kind === 'Wall' ? 'tường' : 'cột';
-  if (!confirm(`Xoá ${what} tại (${obstacle.x}; ${obstacle.y}) m?`)) return;
-  const removed = await run(() => api.removeObstacle(roomId(), obstacle.id), `Đã xoá ${what}.`);
-  if (removed) setState({ selectedObstacleId: null });
+  if (!await askConfirm(`Xoá ${what} tại (${obstacle.x}; ${obstacle.y}) m?`, { okText: 'Xoá', danger: true })) return;
+  edit((layout) => { layout.obstacles = layout.obstacles.filter((o) => o.id !== obstacle.id); });
+  setState({ selectedObstacleId: null });
+  showMessage(`Đã xoá ${what} khỏi bản nháp (chưa lưu).`);
 }
 
 export async function removeRack(rack) {
-  if (!confirm(`Xoá kệ ${rack.code} và ${rack.slotCount} khung của nó? Không hoàn tác được.`)) return;
+  if (!await askConfirm(`Xoá kệ ${rack.code} khỏi bản nháp? Kệ chỉ thật sự bị xoá khi bấm Lưu nháp.`, { okText: 'Xoá', danger: true })) return;
   clearPreview();
-  const removed = await run(() => api.removeRack(roomId(), rack.id), `Đã xoá kệ ${rack.code}.`);
-  if (removed) setState({ selectedRackId: null });
+  edit((layout) => { layout.racks = layout.racks.filter((r) => r.id !== rack.id); });
+  setState({ selectedRackId: null });
+  showMessage(`Đã xoá kệ ${rack.code} khỏi bản nháp (chưa lưu).`);
+}
+
+// ---------- Lưu nháp / Bỏ thay đổi ----------
+
+/** Gửi cả bản nháp lên server (một transaction). Lỗi (đặt sai chỗ, kệ có hàng, lệch phiên bản…) thì giữ nguyên bản nháp để sửa tiếp. */
+export async function saveDraft() {
+  const state = getState();
+  if (!state.layout || !state.dirty || state.saving) return;
+  setState({ saving: true });
+  try {
+    await api.saveLayout(roomId(), toLayoutRequest(state.layout));
+    clearStoredDraft(roomId());
+    setState({ dirty: false, saving: false, draftIssue: null });
+    await loadLayout();   // tải lại: Id thật của kệ/vật cản mới, số khung do server sinh, version mới
+    showMessage('Đã lưu nháp.');
+  } catch (err) {
+    setState({ saving: false });
+    showMessage(err.message, 'error');
+  }
+}
+
+/** Bỏ mọi thay đổi chưa lưu, lấy lại phòng như đã lưu trên server. */
+export async function discardDraft() {
+  if (!getState().dirty) return;
+  if (!await askConfirm('Bỏ mọi thay đổi chưa lưu?', { okText: 'Bỏ thay đổi', danger: true })) return;
+  clearStoredDraft(roomId());
+  clearPreview();
+  setState({ dirty: false, draftIssue: null });
+  await loadLayout();
+  showMessage('Đã bỏ thay đổi, quay lại bản đã lưu.');
 }

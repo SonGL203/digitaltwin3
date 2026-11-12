@@ -17,6 +17,11 @@ public class Room
     public double GridSize { get; private set; }
     public double MinGap { get; private set; }
     public double Margin { get; private set; }
+    /// <summary>
+    /// Số phiên bản, tăng 1 mỗi lần lưu cả bản nháp (PUT layout). Frontend gửi lại số đã tải về;
+    /// lệch nghĩa là có nơi khác đã lưu phòng này, nên chặn để không âm thầm đè mất thay đổi của người kia.
+    /// </summary>
+    public int Version { get; private set; }
 
     public List<Rack> Racks { get; } = new();
     public List<Obstacle> Obstacles { get; } = new();
@@ -54,16 +59,10 @@ public class Room
         Margin = margin;
     }
 
+    public void BumpVersion() => Version++;
+
     /// <summary>Sàn phòng: hình chữ nhật từ (0, 0). Kệ và vật cản phải nằm gọn trong đây.</summary>
     public Rect Bounds => new(0, 0, Width, Depth);
-
-    /// <summary>Đổi bước lưới. Lúc nào cũng được, vì không có gì lưu theo ô.</summary>
-    public void SetGridSize(double gridSize)
-    {
-        if (gridSize <= 0)
-            throw new ArgumentException("Bước lưới phải lớn hơn 0.", nameof(gridSize));
-        GridSize = gridSize;
-    }
 
     /// <summary>
     /// Thêm tường/cột. Chỉ chặn vật cản nằm ngoài phòng (luật của riêng phòng).

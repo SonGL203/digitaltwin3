@@ -54,19 +54,47 @@ public class ObstacleRequest
     [Range(0.01, 500)] public double Depth { get; set; }
 }
 
+/// <summary>Kệ trong bản nháp. Id null = kệ mới vẽ, chưa có trong DB.</summary>
+public class LayoutRackRequest : RackRequest
+{
+    public int? Id { get; set; }
+}
+
+/// <summary>Tường/cột trong bản nháp. Id null = mới vẽ.</summary>
+public class LayoutObstacleRequest : ObstacleRequest
+{
+    public int? Id { get; set; }
+}
+
+/// <summary>
+/// Cả bản nháp của một phòng (nút Lưu nháp): thông số phòng + toàn bộ tường, cột, kệ như người dùng đang thấy.
+/// Version là số phiên bản phòng lúc tải về; lệch với DB thì bị chặn 409.
+/// </summary>
+public class LayoutRequest : RoomRequest
+{
+    public int Version { get; set; }
+    [Required] public List<LayoutObstacleRequest> Obstacles { get; set; } = [];
+    [Required] public List<LayoutRackRequest> Racks { get; set; } = [];
+}
+
 // ===== Đầu ra (API trả về) =====
 
-/// <summary>Id do server gán.</summary>
-public record ObstacleCreatedViewModel(int Id);
+/// <summary>Kết quả kiểm tra thử một kệ trong bản nháp (footprint đã tính xoay, để vẽ bóng mờ).</summary>
+public record RackCheckViewModel(string Code, bool IsValid, string? Reason, double FootprintWidth, double FootprintDepth);
 
-/// <summary>SlotCount do server sinh lại (ví dụ 2 tầng → 3 tầng thì 12 → 16 khung).</summary>
-public record RackUpdatedViewModel(int Id, int SlotCount);
+/// <summary>Kết quả kiểm tra thử cả bản nháp. IsValid = mọi kệ đều đặt được; Reason là lỗi đầu tiên.</summary>
+public record LayoutCheckViewModel(bool IsValid, string? Reason, IReadOnlyList<RackCheckViewModel> Racks);
+
+/// <summary>Id và mã của một kệ sau khi lưu (kệ mới được gán Id).</summary>
+public record LayoutRackId(int Id, string Code);
+
+/// <summary>
+/// Chỉ trả những gì server tạo ra: Version mới, Id của kệ (theo mã), Id của tường/cột theo ĐÚNG THỨ TỰ gửi lên.
+/// </summary>
+public record LayoutSavedViewModel(int Version, IReadOnlyList<LayoutRackId> Racks, IReadOnlyList<int> ObstacleIds);
 
 /// <summary>Chỉ trả Id: mọi số đo khác frontend vừa gửi lên, server không sửa gì.</summary>
 public record RoomCreatedViewModel(int Id);
-
-/// <summary>Id do server gán; Code đã cắt khoảng trắng (" K1 " → "K1").</summary>
-public record RackCreatedViewModel(int Id, string Code);
 
 /// <summary>
 /// FootprintWidth/FootprintDepth: kích thước kệ chiếm trên sàn theo trục X/Y (m), đã tính cả xoay 90°.
@@ -101,10 +129,5 @@ public record RoomSummaryViewModel(
     int Id, string Name, double Width, double Depth, double GridSize, int RackCount, int ObstacleCount, int SlotCount);
 
 public record RoomViewModel(
-    int Id, string Name, double Width, double Depth, double GridSize, double MinGap, double Margin,
+    int Id, string Name, double Width, double Depth, double GridSize, double MinGap, double Margin, int Version,
     IReadOnlyList<RackViewModel> Racks, IReadOnlyList<ObstacleViewModel> Obstacles);
-
-/// <summary>
-/// Kết quả kiểm tra thử (bóng mờ). Đặt không được vẫn là 200 với IsValid = false: frontend chỉ việc tô đỏ và hiện Reason.
-/// </summary>
-public record PlacementCheckViewModel(bool IsValid, string? Reason, double FootprintWidth, double FootprintDepth);

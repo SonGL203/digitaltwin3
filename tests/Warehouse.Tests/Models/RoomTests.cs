@@ -49,7 +49,7 @@ public class RoomTests
     }
 
     [Fact]
-    public void SetGridSize_DoesNotMoveRacks()
+    public void Configure_ChangingGrid_DoesNotMoveRacks()
     {
         // Grid chỉ để snap: đổi grid thì kệ vẫn nằm đúng chỗ, đúng kích thước.
         var room = new Room("Kho A", 20, 12, 0.5, 1.0, 0.05);
@@ -57,22 +57,10 @@ public class RoomTests
         room.Racks.Add(rack);
         var before = rack.GetBounds();
 
-        room.SetGridSize(1.0);
+        room.Configure("Kho A", 20, 12, 1.0, 1.0, 0.05);
 
         Assert.Equal(1.0, room.GridSize);
         Assert.Equal(before, rack.GetBounds());
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(-0.5)]
-    public void SetGridSize_NotPositive_Throws(double gridSize)
-    {
-        var room = new Room("Kho A", 20, 12, 0.5, 1.0, 0.05);
-
-        var ex = Assert.Throws<ArgumentException>(() => room.SetGridSize(gridSize));
-
-        Assert.Equal("gridSize", ex.ParamName);
     }
 
     [Fact]

@@ -46,15 +46,24 @@ export const api = {
   createRoom: (room) => request('POST', '/rooms', room),
   /** Một phòng + kệ (có footprintWidth/footprintDepth, slotCount) + tường/cột. 404 nếu không có. */
   getRoom: (roomId) => request('GET', `/rooms/${roomId}`),
-  updateRoom: (roomId, room) => request('PUT', `/rooms/${roomId}`, room),
 
-  addObstacle: (roomId, obstacle) => request('POST', `/rooms/${roomId}/obstacles`, obstacle),
-  removeObstacle: (roomId, id) => request('DELETE', `/rooms/${roomId}/obstacles/${id}`),
+  // Giao diện làm việc trên BẢN NHÁP trong bộ nhớ, chỉ có hai lời gọi liên quan tới nó:
+  /** Lưu nháp: gửi cả phòng (thông số, tường, cột, kệ + version đã tải). → { version, racks: [{id, code}], obstacleIds }. */
+  saveLayout: (roomId, layout) => request('PUT', `/rooms/${roomId}/layout`, layout),
+  // ---- kho 3D, loại hàng, nhập lô, xếp (theo phòng, trừ loại hàng và nhập lô) ----
+  /** Mọi khung của phòng: { id, rackId, rackCode, code, level, bay, isTop, palletId, palletCode, typeCode, color }. */
+  listSlots: (roomId) => request('GET', `/rooms/${roomId}/slots`),
+  listProductTypes: () => request('GET', '/product-types'),
+  createProductType: (type) => request('POST', '/product-types', type),
+  /** Xem trước lô { lines: [{ quantity, length, width, height, weight, productTypeId }] }. Không ghi gì. */
+  previewBatch: (roomId, batch) => request('POST', `/rooms/${roomId}/batches/preview`, batch),
+  /** Nhập lô: lưu lô và pallet (chưa vào khung) → { batchId, code, palletCount }. */
+  receiveBatch: (batch) => request('POST', '/batches', batch),
+  /** Xếp pallet chưa có khung của lô vào phòng → { placements, rejected, alreadyPlaced }. Bấm lại không xếp đôi. */
+  allocateBatch: (roomId, batchId) => request('POST', `/rooms/${roomId}/batches/${batchId}/allocate`),
+  /** Đặt lại: lấy mọi pallet ra khỏi khung của phòng → { cleared }. */
+  resetPlacements: (roomId) => request('POST', `/rooms/${roomId}/placements/reset`),
 
-  /** Kiểm tra thử (bóng mờ): luôn 200 nếu có phòng, xem isValid và reason. Không lưu gì. */
-  validateRack: (roomId, rack) => request('POST', `/rooms/${roomId}/racks/validate`, rack),
-  addRack: (roomId, rack) => request('POST', `/rooms/${roomId}/racks`, rack),
-  updateRack: (roomId, id, rack) => request('PUT', `/rooms/${roomId}/racks/${id}`, rack),
-  /** Xoá kệ và mọi khung của nó. Kệ đang có hàng thì 409. */
-  removeRack: (roomId, id) => request('DELETE', `/rooms/${roomId}/racks/${id}`),
+  /** Kiểm tra thử cả bản nháp (bóng mờ): luôn 200 nếu có phòng. → { isValid, reason, racks: [{code, isValid, reason, footprintWidth, footprintDepth}] }. Không lưu gì. */
+  validateLayout: (roomId, layout) => request('POST', `/rooms/${roomId}/layout/validate`, layout),
 };

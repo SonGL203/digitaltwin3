@@ -18,7 +18,18 @@ public class SpyWarehouseStore : IWarehouseStore
     public IReadOnlyList<Room> GetRooms() => _inner.GetRooms();
     public Room? GetRoom(int id) => _inner.GetRoom(id);
     public IReadOnlyList<Slot> GetAllSlots() => _inner.GetAllSlots();
-    public IReadOnlyList<Slot> GetSlotsOfRack(int rackId) => _inner.GetSlotsOfRack(rackId);
+    public IReadOnlyList<Slot> GetSlotsOfRacks(IReadOnlyCollection<int> rackIds) => _inner.GetSlotsOfRacks(rackIds);
+
+    public IReadOnlyList<PalletSize> GetPalletSizes() => _inner.GetPalletSizes();
+    public IReadOnlyList<ProductType> GetProductTypes() => _inner.GetProductTypes();
+    public Batch? GetBatch(int id) => _inner.GetBatch(id);
+    public int CountBatches() => _inner.CountBatches();
+    public IReadOnlyList<Pallet> GetPallets(IReadOnlyCollection<int> ids) => _inner.GetPallets(ids);
+
+    public void AddPalletSize(PalletSize size) { Record(nameof(AddPalletSize)); _inner.AddPalletSize(size); }
+    public void AddProductType(ProductType type) { Record(nameof(AddProductType)); _inner.AddProductType(type); }
+    public void AddBatch(Batch batch) { Record(nameof(AddBatch)); _inner.AddBatch(batch); }
+    public void UpdateSlots(IEnumerable<Slot> slots) { Record(nameof(UpdateSlots)); _inner.UpdateSlots(slots); }
 
     public void SaveRoom(Room room) { Record(nameof(SaveRoom)); _inner.SaveRoom(room); }
     public void AddSlots(IEnumerable<Slot> slots) { Record(nameof(AddSlots)); _inner.AddSlots(slots); }

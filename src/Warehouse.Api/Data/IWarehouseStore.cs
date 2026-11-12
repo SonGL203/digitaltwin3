@@ -21,12 +21,40 @@ public interface IWarehouseStore
 
     IReadOnlyList<Slot> GetAllSlots();
 
-    IReadOnlyList<Slot> GetSlotsOfRack(int rackId);
+    /// <summary>Khung của các kệ đã cho, bằng MỘT lần đọc (không đọc từng kệ một).</summary>
+    IReadOnlyList<Slot> GetSlotsOfRacks(IReadOnlyCollection<int> rackIds);
 
     /// <summary>Thêm khung mới (thường là kết quả của Rack.CreateSlots()); khung được gán Id.</summary>
     void AddSlots(IEnumerable<Slot> slots);
 
     void RemoveSlotsOfRack(int rackId);
+
+    /// <summary>Ghi lại khung đã sửa (sau Place/Remove). Cần cho DB thật; store RAM đã sửa thẳng đối tượng đang giữ.</summary>
+    void UpdateSlots(IEnumerable<Slot> slots);
+
+    // ----- type pallet, loại hàng, lô, pallet (Ngày 3) -----
+
+    /// <summary>Mọi type pallet (A, B, …), sắp theo Id. Đưa cho PalletSizer để khớp theo số đo.</summary>
+    IReadOnlyList<PalletSize> GetPalletSizes();
+
+    /// <summary>Lưu type mới; được gán Id (cần có Id trước khi tạo Pallet vì Pallet nhớ SizeId).</summary>
+    void AddPalletSize(PalletSize size);
+
+    IReadOnlyList<ProductType> GetProductTypes();
+
+    void AddProductType(ProductType type);
+
+    /// <summary>Lưu lô cùng các pallet trong batch.Pallets; lô và pallet được gán Id, pallet được gán BatchId.</summary>
+    void AddBatch(Batch batch);
+
+    /// <summary>Lô theo Id kèm pallet (và Size của từng pallet). Null nếu không có.</summary>
+    Batch? GetBatch(int id);
+
+    /// <summary>Số lô đã có, để đặt mã lô kế tiếp (b1, b2…). Mã trùng vẫn bị unique index chặn.</summary>
+    int CountBatches();
+
+    /// <summary>Pallet theo Id (kèm Size), sắp theo Id. Id không có thì bỏ qua.</summary>
+    IReadOnlyList<Pallet> GetPallets(IReadOnlyCollection<int> ids);
 
     /// <summary>
     /// Chạy nhiều lần ghi như MỘT thao tác: hoặc tất cả cùng được lưu, hoặc không lần nào được lưu.
