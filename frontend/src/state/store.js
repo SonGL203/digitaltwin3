@@ -9,7 +9,7 @@ import { askConfirm } from '../ui/confirm.js';
 // Đối tượng mới vẽ chưa có Id của server nên mang Id TẠM ÂM (-1, -2…); lúc lưu gửi id = null.
 
 const state = {
-  step: 'layout',          // 'layout' | 'warehouse' (kho 3D có bảng nhập hàng gắn bên phải)
+  step: 'layout',          // 'layout' | 'warehouse' (kho 3D của kho đang mở) | 'receive' (nhập lô, không cần mở kho)
 
   rooms: [],               // danh sách phòng (tóm tắt) cho màn chọn phòng
   roomsLoaded: false,
@@ -65,11 +65,15 @@ export function setState(patch) {
  * nên kệ mới vẽ sẽ không có khung. Về bước Mặt bằng thì luôn được.
  */
 export function goToStep(step, { reload = true } = {}) {
+  if (step === 'warehouse' && state.currentRoomId == null) step = 'layout';   // Kho 3D luôn là của một kho đang mở
   if (step !== 'layout' && state.dirty) {
     showMessage('Bản nháp chưa lưu: bấm Lưu nháp trước khi sang bước này.', 'error');
     return;
   }
   setState({ step, message: null });
+  // Địa chỉ trang: màn Nhập lô hàng là #/receive; các bước khác theo kho đang mở.
+  const hash = step === 'receive' ? '#/receive' : state.currentRoomId != null ? `#/rooms/${state.currentRoomId}` : '#/rooms';
+  if (location.hash !== hash) history.pushState(null, '', hash);
   // Đang chờ phát hiệu ứng thì khung vừa được tải xong (màn Nhập hàng tải sau khi xếp): tải lại sẽ dựng lại cảnh và cắt ngang hiệu ứng.
   if (step === 'warehouse' && reload && !state.pendingPlacements) loadSlots();
 }
@@ -121,6 +125,9 @@ export async function closeRoom() {
   if (!await confirmDiscard()) return;
   if (location.hash !== '#/rooms') history.pushState(null, '', '#/rooms');
   setState({
+    // Đóng kho khi đang ở Kho 3D (nút "← Danh sách kho" dùng chung cho Mặt bằng và Kho 3D): về màn danh sách,
+    // không để lại màn 3D trống "Chưa mở kho nào". Đang ở màn Nhập lô hàng thì giữ nguyên.
+    step: state.step === 'receive' ? 'receive' : 'layout',
     currentRoomId: null, layout: null, slots: [], lastPlacements: null, pendingPlacements: null, preview: null, tool: 'select', message: null, dirty: false, draftIssue: null,
   });
   await loadRooms();
@@ -170,8 +177,13 @@ function readStoredDraft(roomId) {
   }
 }
 
-/** Đọc địa chỉ trang rồi mở đúng màn: #/rooms/3 → phòng 3, còn lại → danh sách. */
+/** Đọc địa chỉ trang rồi mở đúng màn: #/receive → Nhập lô hàng, #/rooms/3 → phòng 3, còn lại → danh sách. */
 export function syncWithAddress() {
+  if (location.hash === '#/receive') {
+    if (state.step !== 'receive') setState({ step: 'receive', message: null });
+    return Promise.resolve();
+  }
+  if (state.step === 'receive') setState({ step: 'layout' });
   const id = /^#\/rooms\/(\d+)$/.exec(location.hash)?.[1];
   return id ? openRoom(Number(id)) : closeRoom();
 }

@@ -36,7 +36,7 @@ export function createSidebar(root) {
 
   // ---------- nội dung ----------
   function html(state) {
-    if (state.step === 'warehouse') return '<p class="hint">Kho 3D: xem phòng đã lưu, mỗi khung có hàng tô màu theo type pallet. Nhập lô ở bảng bên phải rồi bấm Xác nhận và xếp: pallet bay vào ngay trong cảnh.</p>';
+    if (state.step === 'warehouse') return '<p class="hint">Kho 3D: xem phòng đã lưu, mỗi khung có hàng tô màu theo type pallet. Muốn nhập hàng: bấm "Nhập lô hàng" (lập lô trước, hệ thống kiểm tra và chọn kho), rồi "Xem 3D" để xem pallet bay vào.</p>';
     if (state.step !== 'layout') return '';
     const room = state.layout;
     if (!room) return `<p class="hint">${state.loading ? 'Đang tải mặt bằng…' : 'Chưa có phòng.'}</p>`;

@@ -2,29 +2,35 @@ import { api } from './api/client.js';
 import { createEditor2d } from './editor2d/editor2d.js';
 import { createWarehouse3d } from './scene3d/warehouse3d.js';
 import { createReceive } from './ui/receive.js';
+import { createStockPanel } from './ui/stockPanel.js';
 import { closeRoom, getState, goToStep, setState, subscribe, syncWithAddress } from './state/store.js';
 import { createRoomList } from './ui/roomList.js';
 import { createSidebar } from './ui/sidebar.js';
 import { formatMeters } from './ui/format.js';
 
 // Điểm vào: nối các phần lại với nhau. Mỗi phần tự nghe store và tự vẽ lại.
-// Bước "Mặt bằng" có hai màn: danh sách phòng (chưa mở phòng nào) và editor của phòng đang mở.
+// Tính năng "Kho hàng": danh sách kho (chưa mở kho nào), rồi trong một kho có Mặt bằng (editor 2D) và Kho 3D.
+// Tính năng "Nhập lô hàng": màn riêng, không cần mở kho.
 
 const views = {
   layout: document.getElementById('view-layout'),
   warehouse: document.getElementById('view-warehouse'),
+  receive: document.getElementById('view-receive'),
 };
 const workspace = document.getElementById('workspace');
 const roomListEl = document.getElementById('room-list');
 const roomEditorEl = document.getElementById('room-editor');
 const roomTitle = document.getElementById('room-title');
+const roomBar = document.getElementById('room-bar');
 const stepButtons = document.querySelectorAll('#steps [data-step]');
+const featureButtons = document.querySelectorAll('#features [data-feature]');
 const statusMessage = document.getElementById('status-message');
 const statusCursor = document.getElementById('status-cursor');
 
 createRoomList(roomListEl);
 createSidebar(document.getElementById('sidebar'));
 createReceive(document.getElementById('receive-root'));
+createStockPanel(document.getElementById('stock-root'));
 createEditor2d(document.getElementById('editor2d'), document.getElementById('toolbar-2d'), {
   onCursor(info) {
     if (!info) {
@@ -42,12 +48,21 @@ document.getElementById('back-to-rooms').addEventListener('click', () => closeRo
 let scene3d = null;
 let drawn = { layout: undefined, slots: undefined };   // dữ liệu đã đưa cho cảnh 3D, để không dựng lại khi chưa đổi gì
 
+// Hai tính năng ở thanh trên: "Kho hàng" (danh sách kho → mở kho → Mặt bằng / Kho 3D) và "Nhập lô hàng" (lập lô
+// trước, hệ thống chọn kho). Vào lại "Kho hàng" thì về đúng kho đang mở (Mặt bằng), chưa mở kho nào thì là danh sách.
+document.getElementById('features').addEventListener('click', (e) => {
+  const feature = e.target.closest('[data-feature]')?.dataset.feature;
+  if (feature === 'receive') goToStep('receive');
+  else if (feature === 'rooms' && getState().step === 'receive') goToStep('layout');
+});
+
+// Trong một kho: chuyển Mặt bằng / Kho 3D.
 document.getElementById('steps').addEventListener('click', (e) => {
   const step = e.target.closest('[data-step]')?.dataset.step;
   if (step) goToStep(step);
 });
 
-// Nút Back/Forward của trình duyệt: đọc lại địa chỉ (#/rooms hoặc #/rooms/3) rồi mở đúng màn.
+// Nút Back/Forward của trình duyệt: đọc lại địa chỉ (#/rooms, #/rooms/3 hoặc #/receive) rồi mở đúng màn.
 window.addEventListener('popstate', () => syncWithAddress());
 
 subscribe(render);
@@ -56,12 +71,15 @@ render(getState());
 function render(state) {
   for (const [step, el] of Object.entries(views)) el.hidden = step !== state.step;
   stepButtons.forEach((b) => b.setAttribute('aria-current', b.dataset.step === state.step ? 'step' : 'false'));
+  const feature = state.step === 'receive' ? 'receive' : 'rooms';
+  featureButtons.forEach((b) => b.setAttribute('aria-current', b.dataset.feature === feature ? 'step' : 'false'));
 
   const inRoom = state.currentRoomId != null;
+  roomBar.hidden = !inRoom || feature !== 'rooms';
   roomListEl.hidden = inRoom;
   roomEditorEl.hidden = !inRoom;
-  // Màn danh sách phòng không cần bảng bên: ẩn đi cho rộng chỗ.
-  workspace.classList.toggle('no-sidebar', state.step === 'layout' && !inRoom);
+  // Màn danh sách phòng và màn Nhập lô hàng không cần bảng bên: ẩn đi cho rộng chỗ.
+  workspace.classList.toggle('no-sidebar', state.step === 'receive' || (state.step === 'layout' && !inRoom));
   roomTitle.textContent = state.layout?.name ?? '';
 
   if (state.step === 'warehouse') {

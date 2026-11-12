@@ -61,17 +61,18 @@ public class PalletsApiTests(PalletsApiTests.RamFactory factory) : IClassFixture
     // ---- luồng chính ----
 
     [Fact]
-    public async Task FullFlow_Preview_Receive_Allocate_Slots_Reset()
+    public async Task FullFlow_Check_Receive_Allocate_Slots_Reset()
     {
         var client = factory.CreateClient();
         var roomId = await NewRoomWithRack(client);
         var lot = Lot((6, 0.8, 0.8, 1.0), (2, 0.8, 0.8, 2.0));
 
-        // Xem trước: xếp được cả 8, chưa ghi gì.
-        var preview = await (await client.PostAsJsonAsync($"/api/rooms/{roomId}/batches/preview", lot))
-            .Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal(8, preview.GetProperty("placeable").GetInt32());
-        Assert.Equal("A", preview.GetProperty("lines")[0].GetProperty("typeCode").GetString());
+        // Kiểm tra mọi kho (store dùng chung giữa các test nên lọc đúng phòng của test này): phòng này nhận cả 8.
+        var check = await (await client.PostAsJsonAsync("/api/batches/check", lot)).Content.ReadFromJsonAsync<JsonElement>();
+        var mine = check.GetProperty("rooms").EnumerateArray().Single(r => r.GetProperty("roomId").GetInt32() == roomId);
+        Assert.Equal(8, mine.GetProperty("placeable").GetInt32());
+        Assert.Equal(0, mine.GetProperty("missing").GetInt32());
+        Assert.Equal(8, check.GetProperty("total").GetInt32());
 
         // Nhập lô, rồi xếp.
         var received = await (await client.PostAsJsonAsync("/api/batches", lot)).Content.ReadFromJsonAsync<JsonElement>();
@@ -138,12 +139,11 @@ public class PalletsApiTests(PalletsApiTests.RamFactory factory) : IClassFixture
     }
 
     [Fact]
-    public async Task Preview_QuantityZero_Returns400WithVietnameseMessage()
+    public async Task Check_QuantityZero_Returns400WithVietnameseMessage()
     {
         var client = factory.CreateClient();
-        var roomId = await NewRoomWithRack(client);
 
-        var response = await client.PostAsJsonAsync($"/api/rooms/{roomId}/batches/preview", Lot((0, 0.8, 0.8, 1.0)));
+        var response = await client.PostAsJsonAsync("/api/batches/check", Lot((0, 0.8, 0.8, 1.0)));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("Số lượng phải từ 1 đến 1000", await response.Content.ReadAsStringAsync());
@@ -166,8 +166,23 @@ public class PalletsApiTests(PalletsApiTests.RamFactory factory) : IClassFixture
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/rooms/9999/slots")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsync("/api/rooms/9999/placements/reset", null)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsync($"/api/rooms/{roomId}/batches/9999/allocate", null)).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound,
-            (await client.PostAsJsonAsync("/api/rooms/9999/batches/preview", Lot((1, 0.8, 0.8, 1.0)))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsync("/api/batches/9999/distribute", null)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Distribute_PlacesTheBatchSomewhere_AndSecondCallPlacesNothing()
+    {
+        var client = factory.CreateClient();
+        await NewRoomWithRack(client);   // chắc chắn có ít nhất một kho còn chỗ
+        var received = await (await client.PostAsJsonAsync("/api/batches", Lot((1, 0.8, 0.8, 1.0)))).Content.ReadFromJsonAsync<JsonElement>();
+        var batchId = received.GetProperty("batchId").GetInt32();
+
+        var first = await (await client.PostAsync($"/api/batches/{batchId}/distribute", null)).Content.ReadFromJsonAsync<JsonElement>();
+        var second = await (await client.PostAsync($"/api/batches/{batchId}/distribute", null)).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(1, first.GetProperty("placed").GetInt32());
+        Assert.Equal(1, first.GetProperty("rooms")[0].GetProperty("placements").GetArrayLength());
+        Assert.Equal(0, second.GetProperty("placed").GetInt32());
     }
 
     [Fact]

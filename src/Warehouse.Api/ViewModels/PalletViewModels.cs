@@ -35,17 +35,20 @@ public class ProductTypeRequest
 
 public record ProductTypeViewModel(int Id, string Code, string Name);
 
-/// <summary>
-/// Kết quả xem trước cho một dòng. Status: "Ok" (xếp đủ), "Partial" (xếp được một phần), "Full" (kệ thích hợp đã đầy),
-/// "NoRack" (kho không có kệ thích hợp). Message là câu hiện thẳng cho người dùng.
-/// FittingSlots = khung nhận được pallet này (kể cả đã có hàng), FreeSlots = trong đó còn trống,
-/// Placeable = số pallet của dòng này thật sự xếp được khi tính cả các dòng khác tranh chỗ.
-/// </summary>
-public record BatchLinePreviewViewModel(
+/// <summary>Một dòng của lô sau khi khớp type (type có sẵn hay mới tạo).</summary>
+public record BatchLineCheckViewModel(
     int Quantity, string TypeCode, bool IsNewType, string Color, double Length, double Width, double Height,
-    double? Weight, int? ProductTypeId, int FittingSlots, int FreeSlots, int Placeable, string Status, string Message);
+    double? Weight, int? ProductTypeId);
 
-public record BatchPreviewViewModel(IReadOnlyList<BatchLinePreviewViewModel> Lines, int Total, int Placeable);
+/// <summary>
+/// Một kho nếu nhận RIÊNG cả lô: xếp được bao nhiêu pallet, thiếu bao nhiêu ô. Notes: lý do theo từng type còn thiếu
+/// ("Không có kệ thích hợp cho type B: …", "Các kệ thích hợp cho type A đã đầy.").
+/// </summary>
+public record RoomCheckViewModel(int RoomId, string RoomName, int Placeable, int Missing, IReadOnlyList<string> Notes);
+
+/// <summary>Kiểm tra lô trước khi nhập: dòng nào thành type nào, từng kho nhận được bao nhiêu, và đề xuất chia kho.</summary>
+public record BatchCheckViewModel(
+    int Total, IReadOnlyList<BatchLineCheckViewModel> Lines, IReadOnlyList<RoomCheckViewModel> Rooms, DistributionViewModel Plan);
 
 /// <summary>Id và mã do server gán cho lô vừa nhập (pallet có mã b1-P001…, chưa vào khung nào).</summary>
 public record BatchReceivedViewModel(int BatchId, string Code, int PalletCount);
@@ -59,6 +62,13 @@ public record RejectionViewModel(string PalletCode, string Reason);
 /// <summary>AlreadyPlaced: số pallet của lô đã nằm trong khung từ trước (bấm Xếp lần nữa thì không xếp đôi).</summary>
 public record AllocationViewModel(
     int BatchId, IReadOnlyList<PlacementViewModel> Placements, IReadOnlyList<RejectionViewModel> Rejected, int AlreadyPlaced);
+
+/// <summary>Phần của lô vào một kho. Placements rỗng khi chỉ là dự kiến (plan).</summary>
+public record RoomShareViewModel(int RoomId, string RoomName, int Count, IReadOnlyList<PlacementViewModel> Placements);
+
+/// <summary>Kết quả chia lô ra các kho. BatchId null khi chỉ là dự kiến (chưa nhập lô).</summary>
+public record DistributionViewModel(
+    int? BatchId, int Total, int Placed, IReadOnlyList<RoomShareViewModel> Rooms, IReadOnlyList<RejectionViewModel> Rejected);
 
 /// <summary>Một khung của phòng; pallet/type/màu null khi khung trống.</summary>
 public record SlotViewModel(

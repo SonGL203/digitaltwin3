@@ -98,8 +98,10 @@ body {
 .rack-list button[aria-pressed='true'] { background: #fef3c7; }
 .rack-list .muted { color: var(--muted); }
 
-.stage { flex: 1; min-width: 0; display: flex; }
-.view { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.view { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.room-header[hidden] { display: none; }
+.room-tabs { margin-left: auto; }
 .placeholder { align-items: center; justify-content: center; color: var(--muted); }
 .toolbar {
   display: flex;
@@ -246,6 +248,7 @@ button.primary {
   color: #fff;
   cursor: pointer;
 }
+button.primary:disabled { opacity: 0.45; cursor: not-allowed; }   /* bị khoá thì nhìn ra ngay là không bấm được */
 .room-form .form-actions button:not(.primary) {
   font: inherit;
   padding: 6px 14px;
@@ -346,5 +349,11 @@ button.primary {
 .receive-dock table.lines input { width: 50px; padding: 3px 4px; }
 .receive-dock table.lines select { max-width: 96px; }
 .receive-dock th, .receive-dock td { padding: 4px 3px; }
-.receive-dock { width: min(520px, 50%); }
+.receive-dock { width: min(320px, 45%); }   /* màn 3D chỉ còn bảng xem kho: hẹp lại cho rộng cảnh */
+
+/* Màn Nhập lô hàng riêng (#/receive) */
+.receive-page { margin: 0 auto; }
+.receive-page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.receive-page-head h1 { font-size: 18px; margin: 0; }
+.room-list-actions { display: flex; gap: 8px; }
 .view3d-speed { z-index: 2; }

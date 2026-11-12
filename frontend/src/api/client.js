@@ -55,12 +55,17 @@ export const api = {
   listSlots: (roomId) => request('GET', `/rooms/${roomId}/slots`),
   listProductTypes: () => request('GET', '/product-types'),
   createProductType: (type) => request('POST', '/product-types', type),
-  /** Xem trước lô { lines: [{ quantity, length, width, height, weight, productTypeId }] }. Không ghi gì. */
-  previewBatch: (roomId, batch) => request('POST', `/rooms/${roomId}/batches/preview`, batch),
+  /**
+   * Kiểm tra lô { lines: [{ quantity, length, width, height, weight, productTypeId }] } với MỌI kho, không ghi gì →
+   * { total, lines, rooms: [{ roomId, roomName, placeable, missing, notes }], plan: { placed, rooms: [{ roomId, roomName, count }], rejected } }.
+   */
+  checkBatch: (batch) => request('POST', '/batches/check', batch),
   /** Nhập lô: lưu lô và pallet (chưa vào khung) → { batchId, code, palletCount }. */
   receiveBatch: (batch) => request('POST', '/batches', batch),
-  /** Xếp pallet chưa có khung của lô vào phòng → { placements, rejected, alreadyPlaced }. Bấm lại không xếp đôi. */
+  /** Xếp pallet chưa có khung của lô vào MỘT kho → { placements, rejected, alreadyPlaced }. Bấm lại không xếp đôi. */
   allocateBatch: (roomId, batchId) => request('POST', `/rooms/${roomId}/batches/${batchId}/allocate`),
+  /** Nhập theo đề xuất: chia pallet chưa có khung của lô ra các kho → { placed, total, rooms: [{ roomId, roomName, count, placements }], rejected }. */
+  distributeBatch: (batchId) => request('POST', `/batches/${batchId}/distribute`),
   /** Đặt lại: lấy mọi pallet ra khỏi khung của phòng → { cleared }. */
   resetPlacements: (roomId) => request('POST', `/rooms/${roomId}/placements/reset`),
 

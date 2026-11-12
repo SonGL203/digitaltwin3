@@ -187,7 +187,7 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
 
     if (!layout) {
       shownKey = null;
-      showOverlay('<p>Chưa mở phòng nào. Chọn một phòng ở bước 1.</p>');
+      showOverlay('<p>Chưa mở kho nào. Chọn một kho ở danh sách Kho hàng.</p>');
       return;
     }
 

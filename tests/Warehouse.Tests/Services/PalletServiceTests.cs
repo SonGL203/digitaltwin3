@@ -61,80 +61,142 @@ public class PalletServiceTests
         Assert.Single(pallets.GetProductTypes().Value!);
     }
 
-    // ---- Preview ----
+    // ---- CheckBatch (lập lô trước, kiểm tra mọi kho) ----
+
+    // Thêm một kho nữa giống kho A (một kệ K1, 12 khung).
+    private static int AddRoom(LayoutService layout, string name)
+    {
+        var roomId = layout.CreateRoom(new RoomRequest { Name = name, Width = 10, Depth = 5, GridSize = 0.5, MinGap = 1.0, Margin = 0.05 }).Value!.Id;
+        var request = new LayoutRequest { Name = name, Width = 10, Depth = 5, GridSize = 0.5, MinGap = 1.0, Margin = 0.05, Version = 0 };
+        request.Racks.Add(new LayoutRackRequest
+        {
+            Code = "K1", X = 0, Y = 0, Rotation = 0, Levels = 3, LevelHeight = 1.2, Bays = 3, BayWidth = 1.0, Depth = 1.0,
+            HasTop = true, MaxWeight = 1000,
+        });
+        Assert.True(layout.SaveLayout(roomId, request).IsSuccess);
+        return roomId;
+    }
 
     [Fact]
-    public void Preview_6LowAnd2Tall_AllPlaceableAndWritesNothing()
+    public void Check_6LowAnd2Tall_RoomTakesAll_AndWritesNothing()
     {
         var (_, pallets, store, roomId) = Setup();
 
-        var preview = pallets.Preview(roomId, Lot((6, 0.8, 0.8, Low), (2, 0.8, 0.8, Tall))).Value!;
+        var check = pallets.CheckBatch(Lot((6, 0.8, 0.8, Low), (2, 0.8, 0.8, Tall))).Value!;
 
-        Assert.Equal((8, 8), (preview.Total, preview.Placeable));
-        Assert.Equal(("A", true, "Ok"), (preview.Lines[0].TypeCode, preview.Lines[0].IsNewType, preview.Lines[0].Status));
-        Assert.Equal(("B", true, "Ok"), (preview.Lines[1].TypeCode, preview.Lines[1].IsNewType, preview.Lines[1].Status));
-        Assert.Equal(3, preview.Lines[1].FittingSlots);   // pallet cao chỉ vào 3 khung nóc
-        Assert.Empty(store.GetPalletSizes());             // xem trước không lưu type
+        Assert.Equal(8, check.Total);
+        Assert.Equal(("A", true), (check.Lines[0].TypeCode, check.Lines[0].IsNewType));
+        Assert.Equal(("B", true), (check.Lines[1].TypeCode, check.Lines[1].IsNewType));
+        var room = Assert.Single(check.Rooms);
+        Assert.Equal((roomId, 8, 0), (room.RoomId, room.Placeable, room.Missing));
+        Assert.Empty(room.Notes);
+        Assert.Equal(8, check.Plan.Placed);
+        Assert.Empty(store.GetPalletSizes());   // kiểm tra không lưu type
         Assert.Equal(0, store.CountBatches());
     }
 
     [Fact]
-    public void Preview_PalletWiderThanEverySlot_ReportsNoRackWithReason()
+    public void Check_PalletWiderThanEverySlot_ReportsNoRackWithReason()
     {
-        var (_, pallets, _, roomId) = Setup();
+        var (_, pallets, _, _) = Setup();
 
-        var line = pallets.Preview(roomId, Lot((1, 1.5, 1.5, Low))).Value!.Lines[0];
+        var check = pallets.CheckBatch(Lot((1, 1.5, 1.5, Low))).Value!;
 
-        Assert.Equal("NoRack", line.Status);
-        Assert.Equal(0, line.FittingSlots);
-        Assert.Contains("rộng hơn", line.Message);
+        var room = Assert.Single(check.Rooms);
+        Assert.Equal(1, room.Missing);
+        Assert.Contains(room.Notes, n => n.Contains("rộng hơn"));
+        Assert.Equal(0, check.Plan.Placed);
     }
 
     [Fact]
-    public void Preview_MoreThanFreeSlots_IsPartial()
+    public void Check_MoreThanFreeSlots_ReportsHowManyAreMissing()
     {
-        var (_, pallets, _, roomId) = Setup();
+        var (_, pallets, _, _) = Setup();
 
-        var line = pallets.Preview(roomId, Lot((14, 0.8, 0.8, Low))).Value!.Lines[0];
+        var room = Assert.Single(pallets.CheckBatch(Lot((14, 0.8, 0.8, Low))).Value!.Rooms);
 
-        Assert.Equal(("Partial", 12), (line.Status, line.Placeable));
+        Assert.Equal((12, 2), (room.Placeable, room.Missing));
+        Assert.Contains(room.Notes, n => n.Contains("thiếu 2 ô"));
     }
 
     [Fact]
-    public void Preview_AfterRoomIsFull_ReportsFull()
+    public void Check_AfterRoomIsFull_ReportsFull()
     {
         var (_, pallets, _, roomId) = Setup();
         ReceiveAndAllocate(pallets, roomId, Lot((12, 0.8, 0.8, Low)));
 
-        var line = pallets.Preview(roomId, Lot((1, 0.8, 0.8, Low))).Value!.Lines[0];
+        var check = pallets.CheckBatch(Lot((1, 0.8, 0.8, Low))).Value!;
 
-        Assert.Equal(("Full", 0, 0), (line.Status, line.FreeSlots, line.Placeable));
-        Assert.False(line.IsNewType);   // type A đã lưu từ lần nhập trước
+        Assert.False(check.Lines[0].IsNewType);   // type A đã lưu từ lần nhập trước
+        var room = Assert.Single(check.Rooms);
+        Assert.Equal(0, room.Placeable);
+        Assert.Contains(room.Notes, n => n.Contains("đã đầy"));
     }
 
     [Fact]
-    public void Preview_TwoLinesSameMeasurementsRotated_ShareOneType()
+    public void Check_TwoLinesSameMeasurementsRotated_ShareOneType()
     {
-        var (_, pallets, _, roomId) = Setup();
+        var (_, pallets, _, _) = Setup();
 
-        var lines = pallets.Preview(roomId, Lot((1, 0.8, 0.6, Low), (1, 0.6, 0.8, Low))).Value!.Lines;
+        var lines = pallets.CheckBatch(Lot((1, 0.8, 0.6, Low), (1, 0.6, 0.8, Low))).Value!.Lines;
 
         Assert.Equal(("A", true), (lines[0].TypeCode, lines[0].IsNewType));
         Assert.Equal(("A", false), (lines[1].TypeCode, lines[1].IsNewType));
     }
 
     [Fact]
-    public void Preview_BadInput_ReturnsErrors()
+    public void Check_NoRoomTakesAll_PlanSplitsAcrossRooms()
     {
-        var (_, pallets, _, roomId) = Setup();
+        var (layout, pallets, _, roomA) = Setup();
+        var roomB = AddRoom(layout, "Kho B");
+
+        var check = pallets.CheckBatch(Lot((20, 0.8, 0.8, Low))).Value!;
+
+        Assert.All(check.Rooms, r => Assert.Equal(8, r.Missing));   // mỗi kho chỉ 12 khung
+        Assert.Equal(20, check.Plan.Placed);
+        Assert.Equal(new[] { roomA, roomB }, check.Plan.Rooms.Select(r => r.RoomId).Order());
+        Assert.Empty(check.Plan.Rooms.SelectMany(r => r.Placements));   // đề xuất không kèm danh sách khung
+    }
+
+    [Fact]
+    public void Check_BadInput_ReturnsErrors()
+    {
+        var (_, pallets, _, _) = Setup();
         var unknownType = Lot((1, 0.8, 0.8, Low));
         unknownType.Lines[0].ProductTypeId = 99;
 
-        Assert.Equal(ServiceError.NotFound, pallets.Preview(99, Lot((1, 0.8, 0.8, Low))).Error);
-        Assert.Equal(ServiceError.Invalid, pallets.Preview(roomId, unknownType).Error);
-        Assert.Equal(ServiceError.Invalid, pallets.Preview(roomId, new BatchRequest()).Error);
-        Assert.Equal(ServiceError.Invalid, pallets.Preview(roomId, Lot((1500, 0.8, 0.8, Low), (600, 0.8, 0.8, Low))).Error);
-        Assert.Equal(ServiceError.Invalid, pallets.Preview(roomId, Lot((1, 0, 0.8, Low))).Error);   // gọi thẳng service nên bỏ qua [Range]
+        Assert.Equal(ServiceError.Invalid, pallets.CheckBatch(unknownType).Error);
+        Assert.Equal(ServiceError.Invalid, pallets.CheckBatch(new BatchRequest()).Error);
+        Assert.Equal(ServiceError.Invalid, pallets.CheckBatch(Lot((1500, 0.8, 0.8, Low), (600, 0.8, 0.8, Low))).Error);
+        Assert.Equal(ServiceError.Invalid, pallets.CheckBatch(Lot((1, 0, 0.8, Low))).Error);   // gọi thẳng service nên bỏ qua [Range]
+    }
+
+    // ---- Distribute (nhập theo đề xuất) ----
+
+    [Fact]
+    public void Distribute_SameTypeGoesToTheRoomThatAlreadyHasIt_AndSecondCallPlacesNothing()
+    {
+        var (layout, pallets, _, roomA) = Setup();
+        var roomB = AddRoom(layout, "Kho B");   // kho B trống, liệt kê sau
+        ReceiveAndAllocate(pallets, roomB, Lot((1, 0.8, 0.8, Low)));   // kho B có type A
+
+        var batchId = pallets.ReceiveBatch(Lot((3, 0.8, 0.8, Low))).Value!.BatchId;
+        var first = pallets.Distribute(batchId).Value!;
+        var second = pallets.Distribute(batchId).Value!;
+
+        Assert.Equal(3, first.Placed);
+        Assert.Equal(roomB, Assert.Single(first.Rooms).RoomId);
+        Assert.DoesNotContain(first.Rooms, r => r.RoomId == roomA);
+        Assert.Equal(3, first.Rooms[0].Placements.Count);
+        Assert.Equal(0, second.Placed);
+    }
+
+    [Fact]
+    public void Distribute_UnknownBatch_IsNotFound()
+    {
+        var (_, pallets, _, _) = Setup();
+
+        Assert.Equal(ServiceError.NotFound, pallets.Distribute(999).Error);
     }
 
     // ---- ReceiveBatch ----

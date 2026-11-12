@@ -1,5 +1,5 @@
 import { api } from '../api/client.js';
-import { getState, openRoom, setState, showMessage, subscribe } from '../state/store.js';
+import { getState, goToStep, openRoom, setState, showMessage, subscribe } from '../state/store.js';
 import { formatInt, formatMeters } from './format.js';
 
 // Màn danh sách phòng: mỗi phòng một thẻ, bấm để mở trong editor. Nút "Thêm phòng" mở form nhập đủ thông số
@@ -22,6 +22,10 @@ export function createRoomList(root) {
       return;
     }
     const action = e.target.closest('[data-action]')?.dataset.action;
+    if (action === 'receive') {
+      goToStep('receive');   // lập lô trước, hệ thống chọn kho sau: không cần mở kho nào
+      return;
+    }
     if (action === 'open-form') {
       formOpen = true;
       formError = '';
@@ -74,7 +78,10 @@ export function createRoomList(root) {
     root.innerHTML = `
       <div class="room-list-head">
         <h1>Phòng (${state.rooms.length})</h1>
-        ${showForm ? '' : '<button type="button" class="primary" data-action="open-form">+ Thêm phòng</button>'}
+        <span class="room-list-actions">
+          ${state.rooms.length ? '<button type="button" class="primary" data-action="receive">Nhập lô hàng</button>' : ''}
+          ${showForm ? '' : '<button type="button" data-action="open-form">+ Thêm phòng</button>'}
+        </span>
       </div>
       ${showForm ? roomForm(state.rooms.length > 0) : ''}
       ${state.rooms.length === 0 ? '<p class="hint">Chưa có phòng nào. Nhập thông số để tạo phòng đầu tiên.</p>' : ''}

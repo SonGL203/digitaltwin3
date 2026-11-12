@@ -9,9 +9,10 @@ public interface IPalletService
 {
     ServiceResult<IReadOnlyList<ProductTypeViewModel>> GetProductTypes();
     ServiceResult<ProductTypeViewModel> CreateProductType(ProductTypeRequest request);
-    ServiceResult<BatchPreviewViewModel> Preview(int roomId, BatchRequest request);
+    ServiceResult<BatchCheckViewModel> CheckBatch(BatchRequest request);
     ServiceResult<BatchReceivedViewModel> ReceiveBatch(BatchRequest request);
     ServiceResult<AllocationViewModel> Allocate(int roomId, int batchId);
+    ServiceResult<DistributionViewModel> Distribute(int batchId);
     ServiceResult<IReadOnlyList<SlotViewModel>> GetSlots(int roomId);
     ServiceResult<ResetViewModel> ResetPlacements(int roomId);
 }
@@ -20,8 +21,9 @@ public interface IPalletService
 /// Nhập lô và xếp pallet. Chỉ điều phối: lấy dữ liệu từ store → hỏi Rules (PalletSizer, SlotFinder, Allocator) →
 /// áp kết quả (Place) → lưu. Không tự viết lại luật chọn khung, nên số trong xem trước và khi xếp thật khớp nhau
 /// (cùng SlotFinder/Allocator).
-/// Ba bước tách riêng để bấm lại không xếp đôi: Preview (không ghi gì) → ReceiveBatch (lưu lô, pallet chưa vào khung)
-/// → Allocate (chỉ xếp pallet của lô CHƯA nằm trong khung nào; gọi lần nữa thì không có gì để xếp).
+/// Lập lô trước, chọn kho sau. Ba bước tách riêng để bấm lại không xếp đôi: CheckBatch (kiểm tra mọi kho, không ghi gì)
+/// → ReceiveBatch (lưu lô, pallet chưa vào khung) → Distribute (tự chia các kho) hoặc Allocate (một kho người dùng chọn);
+/// cả hai chỉ xếp pallet của lô CHƯA nằm trong khung nào, gọi lần nữa thì không có gì để xếp.
 /// </summary>
 public class PalletService(IWarehouseStore store) : IPalletService
 {
@@ -55,26 +57,21 @@ public class PalletService(IWarehouseStore store) : IPalletService
         return ServiceResult<ProductTypeViewModel>.Ok(new ProductTypeViewModel(type.Id, type.Code, type.Name));
     }
 
-    // ---------- xem trước (không ghi gì) ----------
+    // ---------- kiểm tra lô (không ghi gì) ----------
 
     /// <summary>
-    /// Với từng dòng của lô: type nào (có sẵn hay mới), kho có kệ thích hợp không, còn bao nhiêu chỗ, xếp được bao nhiêu.
-    /// Chạy đúng Allocator như khi xếp thật (trên pallet tạm trong RAM) nên con số "xếp được" khớp với kết quả thật.
+    /// Lập lô trước, chọn kho sau: khớp từng dòng với type, rồi với MỌI kho tính xem nếu nhận riêng cả lô thì xếp được
+    /// bao nhiêu, thiếu bao nhiêu (kèm lý do theo type); cuối cùng là đề xuất chia kho (Distributor).
+    /// Chạy đúng Allocator/Distributor như khi xếp thật (trên pallet tạm trong RAM) nên con số khớp với kết quả thật.
     /// </summary>
-    public ServiceResult<BatchPreviewViewModel> Preview(int roomId, BatchRequest request)
+    public ServiceResult<BatchCheckViewModel> CheckBatch(BatchRequest request)
     {
-        var room = store.GetRoom(roomId);
-        if (room is null)
-            return NoRoom<BatchPreviewViewModel>(roomId);
-
         if (CheckRequest(request) is { } requestError)
-            return ServiceResult<BatchPreviewViewModel>.Fail(ServiceError.Invalid, requestError);
+            return ServiceResult<BatchCheckViewModel>.Fail(ServiceError.Invalid, requestError);
 
         var (resolved, error) = ResolveLines(request, save: null);
         if (resolved is null)
-            return ServiceResult<BatchPreviewViewModel>.Fail(ServiceError.Invalid, error!);
-
-        var candidates = PlacementOrder(room);
+            return ServiceResult<BatchCheckViewModel>.Fail(ServiceError.Invalid, error!);
 
         // Pallet tạm (chưa lưu, Id = 0): đủ cho SlotFinder/Allocator vì chỉ đọc số đo qua Size.
         var palletsOfLine = resolved
@@ -85,40 +82,49 @@ public class PalletService(IWarehouseStore store) : IPalletService
         for (var i = 0; i < palletsOfLine.Count; i++)
             foreach (var pallet in palletsOfLine[i])
                 lineOf[pallet] = i;
+        var all = palletsOfLine.SelectMany(p => p).ToList();
 
-        var allocation = Allocator.Allocate(palletsOfLine.SelectMany(p => p).ToList(), candidates, room.Margin);
-        var placeable = allocation.Placements.GroupBy(p => lineOf[p.Pallet]).ToDictionary(g => g.Key, g => g.Count());
-
-        var lines = new List<BatchLinePreviewViewModel>();
-        for (var i = 0; i < resolved.Count; i++)
+        var rooms = AllRooms();
+        var roomChecks = rooms.Select(room =>
         {
-            var (line, size, isNew) = resolved[i];
-            var search = SlotFinder.Find(candidates, palletsOfLine[i][0], room.Margin);
-            var canPlace = placeable.GetValueOrDefault(i);
+            var allocation = Allocator.Allocate(all, room.Candidates, room.Margin);
+            var placeable = allocation.Placements.GroupBy(p => lineOf[p.Pallet]).ToDictionary(g => g.Key, g => g.Count());
+            var notes = new List<string>();
+            for (var i = 0; i < resolved.Count; i++)
+            {
+                var search = SlotFinder.Find(room.Candidates, palletsOfLine[i][0], room.Margin);
+                var note = Shortage(room.Candidates.Count, search, resolved[i].Size.Code, resolved[i].Line.Quantity, placeable.GetValueOrDefault(i));
+                if (note is not null)
+                    notes.Add(note);
+            }
+            return new RoomCheckViewModel(room.RoomId, room.Name, allocation.Placements.Count,
+                all.Count - allocation.Placements.Count, notes.Distinct().ToList());
+        }).ToList();
 
-            var (status, message) = Describe(candidates.Count, search, size.Code, line.Quantity, canPlace);
-            lines.Add(new BatchLinePreviewViewModel(
-                line.Quantity, size.Code, isNew, size.Color, size.Length, size.Width, size.Height, size.Weight,
-                line.ProductTypeId, search.FittingCount, search.FreeSlots.Count, canPlace, status, message));
-        }
+        var plan = Distributor.Distribute(all, rooms, preferredRoomId: null);
 
-        return ServiceResult<BatchPreviewViewModel>.Ok(
-            new BatchPreviewViewModel(lines, lines.Sum(l => l.Quantity), allocation.Placements.Count));
+        var lines = resolved.Select(r => new BatchLineCheckViewModel(
+            r.Line.Quantity, r.Size.Code, r.IsNew, r.Size.Color, r.Size.Length, r.Size.Width, r.Size.Height, r.Size.Weight,
+            r.Line.ProductTypeId)).ToList();
+
+        return ServiceResult<BatchCheckViewModel>.Ok(new BatchCheckViewModel(
+            all.Count, lines, roomChecks, ToViewModel(null, all.Count, plan, withPlacements: false)));
     }
 
-    private static (string Status, string Message) Describe(int slotCount, SlotSearchResult search, string typeCode, int needed, int placeable)
+    /// <summary>Lý do một dòng không vào đủ một kho; null khi vào đủ.</summary>
+    private static string? Shortage(int slotCount, SlotSearchResult search, string typeCode, int needed, int placeable)
     {
         if (!search.HasAnyFittingSlot)
         {
-            return ("NoRack", slotCount == 0
-                ? "Phòng chưa có khung nào."
-                : $"Không có kệ thích hợp cho type {typeCode}: {string.Join(" ", search.RejectionReasons)}");
+            return slotCount == 0
+                ? "Kho chưa có khung nào."
+                : $"Không có kệ thích hợp cho type {typeCode}: {string.Join(" ", search.RejectionReasons)}";
         }
         if (placeable == 0)
-            return ("Full", $"Các kệ thích hợp cho type {typeCode} đã đầy.");
+            return $"Các kệ thích hợp cho type {typeCode} đã đầy.";
         if (placeable < needed)
-            return ("Partial", $"Type {typeCode}: còn {search.FreeSlots.Count} vị trí phù hợp (cần {needed}), xếp được {placeable}.");
-        return ("Ok", $"Type {typeCode}: xếp được cả {needed} pallet.");
+            return $"Type {typeCode}: xếp được {placeable} / {needed}, thiếu {needed - placeable} ô.";
+        return null;
     }
 
     // ---------- nhập lô ----------
@@ -199,6 +205,52 @@ public class PalletService(IWarehouseStore store) : IPalletService
 
         return outcome;
     }
+
+    // ---------- chia lô ra nhiều kho ----------
+
+    /// <summary>
+    /// Nhập theo đề xuất: chia các pallet CHƯA có khung của lô ra các kho (ưu tiên kho đã có type trùng), trong MỘT
+    /// transaction. Cùng Distributor với CheckBatch nên khớp đề xuất. Bấm lại thì chỉ còn pallet chưa có khung: không xếp đôi.
+    /// </summary>
+    public ServiceResult<DistributionViewModel> Distribute(int batchId)
+    {
+        ServiceResult<DistributionViewModel> outcome = default!;
+        store.InTransaction(() =>
+        {
+            var batch = store.GetBatch(batchId);
+            if (batch is null)
+            {
+                outcome = ServiceResult<DistributionViewModel>.Fail(ServiceError.NotFound, $"Không có lô Id {batchId}.");
+                return;
+            }
+
+            var placedIds = store.GetAllSlots().Where(s => s.PalletId is not null).Select(s => s.PalletId!.Value).ToHashSet();
+            var unplaced = batch.Pallets.Where(p => !placedIds.Contains(p.Id)).OrderBy(p => p.Id).ToList();
+
+            var result = Distributor.Distribute(unplaced, AllRooms(), preferredRoomId: null);
+            var all = result.Shares.SelectMany(s => s.Placements).ToList();
+            foreach (var placement in all)
+                placement.Target.Slot.Place(placement.Pallet);
+            store.UpdateSlots(all.Select(p => p.Target.Slot).ToList());
+
+            outcome = ServiceResult<DistributionViewModel>.Ok(ToViewModel(batch.Id, unplaced.Count, result, withPlacements: true));
+        });
+
+        return outcome;
+    }
+
+    private List<RoomSlots> AllRooms()
+        => store.GetRooms().Select(r => new RoomSlots(r.Id, r.Name, PlacementOrder(r), r.Margin)).ToList();
+
+    private static DistributionViewModel ToViewModel(int? batchId, int total, DistributionResult result, bool withPlacements)
+        => new(
+            batchId,
+            total,
+            result.Shares.Sum(s => s.Placements.Count),
+            result.Shares.Select(s => new RoomShareViewModel(
+                s.RoomId, s.Name, s.Placements.Count,
+                withPlacements ? s.Placements.Select(ToViewModel).ToList() : new List<PlacementViewModel>())).ToList(),
+            result.Rejected.Select(r => new RejectionViewModel(r.Pallet.Code, r.Reason)).ToList());
 
     private static PlacementViewModel ToViewModel(Placement p)
         => new(p.Pallet.Code, p.Pallet.Size.Code, p.Pallet.Size.Color,
