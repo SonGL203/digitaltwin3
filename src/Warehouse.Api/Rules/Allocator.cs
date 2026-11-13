@@ -42,15 +42,46 @@ public static class Allocator
     private sealed record Simulation(List<Placement> Placements, List<Rejection> Full, Score Score);
 
     /// <summary>
-    /// Điểm của một kết quả xếp: nhỏ hơn là tốt hơn, so lần lượt: ít pallet bị từ chối → ít pallet lên nóc
-    /// → ít tầng lẫn → ít cặp (tầng, type) → ít kệ lẫn.
+    /// Mức "lẫn" của trạng thái kho, nhỏ hơn là tốt hơn, so lần lượt: tầng thường lẫn → cặp (tầng thường, type)
+    /// → hàng nóc lẫn → cặp (hàng nóc, type) → kệ lẫn. Hàng nóc của một kệ tính như một tầng riêng nhưng xếp SAU
+    /// tầng thường: chỉ dùng để phân xử khi khung thường như nhau (ví dụ pallet lẻ phải lên nóc thì lên nóc kệ cùng
+    /// type, lô b77). "Kệ lẫn" chỉ tính khung thường.
     /// </summary>
-    private readonly record struct Score(int Unplaced, int OnTop, int MixedLevels, int LevelTypePairs, int MixedRacks)
-        : IComparable<Score>
+    private readonly record struct Mixing(int MixedLevels, int LevelPairs, int MixedTops, int TopPairs, int MixedRacks)
+        : IComparable<Mixing>
+    {
+        public int CompareTo(Mixing other)
+            => (MixedLevels, LevelPairs, MixedTops, TopPairs, MixedRacks)
+                .CompareTo((other.MixedLevels, other.LevelPairs, other.MixedTops, other.TopPairs, other.MixedRacks));
+
+        public static Mixing Of(IEnumerable<KeyValuePair<(Rack Rack, int Level), List<Slot>>> groups,
+                                IReadOnlyDictionary<Slot, string> typeOfSlot)
+        {
+            var rows = groups
+                .Select(kv => (kv.Key.Rack, IsTop: kv.Value[0].IsTop,
+                               Types: kv.Value.Where(typeOfSlot.ContainsKey).Select(s => typeOfSlot[s]).ToHashSet()))
+                .ToList();
+            var levels = rows.Where(r => !r.IsTop).ToList();
+            var tops = rows.Where(r => r.IsTop).ToList();
+            return new Mixing(
+                levels.Count(l => l.Types.Count > 1),
+                levels.Sum(l => l.Types.Count),
+                tops.Count(t => t.Types.Count > 1),
+                tops.Sum(t => t.Types.Count),
+                levels.GroupBy(l => l.Rack).Count(g => g.SelectMany(l => l.Types).Distinct().Count() > 1));
+        }
+    }
+
+    /// <summary>
+    /// Điểm của một kết quả xếp: nhỏ hơn là tốt hơn, so lần lượt: ít pallet bị từ chối → ít pallet lên nóc → ít lẫn.
+    /// </summary>
+    private readonly record struct Score(int Unplaced, int OnTop, Mixing Mix) : IComparable<Score>
     {
         public int CompareTo(Score other)
-            => (Unplaced, OnTop, MixedLevels, LevelTypePairs, MixedRacks)
-                .CompareTo((other.Unplaced, other.OnTop, other.MixedLevels, other.LevelTypePairs, other.MixedRacks));
+        {
+            var byCount = (Unplaced, OnTop).CompareTo((other.Unplaced, other.OnTop));
+            return byCount != 0 ? byCount : Mix.CompareTo(other.Mix);
+        }
     }
 
     /// <summary>
@@ -123,9 +154,9 @@ public static class Allocator
             foreach (var (pallet, _) in group.Members)
                 fits[pallet] = slots;
         }
-        var improved = Improve(best.Placements, candidates, reserved, fits);
+        var (improved, full) = Improve(best.Placements, best.Full, candidates, reserved, fits);
 
-        return new AllocationResult(improved, rejected.Concat(best.Full).ToList());
+        return new AllocationResult(improved, rejected.Concat(full).ToList());
     }
 
     /// <summary>Số vòng đổi chỗ tối đa (mỗi vòng thử mọi cặp; dừng sớm khi một vòng không cải thiện gì).</summary>
@@ -133,30 +164,35 @@ public static class Allocator
 
     /// <summary>
     /// Duyệt các thứ tự type chưa đủ: trong một type, phần dư vẫn chọn ô tham lam từng pallet, nên có thể ra một tầng
-    /// 3 type (ví dụ lô b46: B B A D) trong khi đổi cái A với cái D trên nóc thì tầng đó chỉ còn B, D.
-    /// Bước này thử ĐỔI CHỖ từng cặp pallet khác type trong kế hoạch (chỉ khi cả hai vừa ô của nhau), giữ lần đổi làm
-    /// điểm "lẫn" tốt hơn (ít tầng lẫn → ít cặp tầng-type → ít kệ lẫn), lặp tới khi không còn lần đổi nào tốt hơn.
-    /// Đổi chỗ giữ nguyên số pallet đã xếp và số pallet trên nóc (hai pallet đổi khung cho nhau), nên không làm hỏng
-    /// hai tiêu chí đầu của điểm; và chỉ giữ khi tốt hơn nên kết quả không bao giờ kém kế hoạch ban đầu.
+    /// 3 type (lô b46: B B A D), hay pallet lẻ lên nóc kệ của type khác (lô b77). Bước này cải thiện cục bộ kế hoạch:
+    ///   - ĐỔI CHỖ hai pallet khác type (chỉ khi cả hai vừa khung của nhau);
+    ///   - DỜI một pallet sang khung còn trống mà nó vừa, chỉ trong cùng loại khung (thường → thường, nóc → nóc);
+    ///   - THAY một pallet đã xếp bằng một pallet đang phải ở lại trong lô (hết chỗ) khác type, nếu pallet đó vừa khung:
+    ///     kho không chứa hết lô thì chọn để lại pallet nào cho kho gọn nhất (lô b77: để lại cái E lẻ thay vì một cái A
+    ///     thì không hàng nóc nào lẫn).
+    /// Giữ bước nào làm mức "lẫn" tốt hơn (Mixing: tầng thường trước, rồi hàng nóc, rồi kệ), lặp tới khi không còn bước
+    /// nào tốt hơn. Cả ba bước giữ nguyên số pallet đã xếp và số pallet trên nóc, nên không làm hỏng hai tiêu chí đầu
+    /// của điểm; chỉ giữ khi tốt hơn nên kết quả không bao giờ kém kế hoạch ban đầu. Thứ tự thử cố định: tất định.
     /// </summary>
-    private static List<Placement> Improve(
-        List<Placement> placements, IReadOnlyList<SlotCandidate> candidates,
+    private static (List<Placement> Plan, List<Rejection> Full) Improve(
+        List<Placement> placements, List<Rejection> fullRejections, IReadOnlyList<SlotCandidate> candidates,
         IReadOnlyDictionary<Slot, string>? reserved, IReadOnlyDictionary<Pallet, HashSet<Slot>> fits)
     {
         var plan = placements.ToList();
-        if (plan.Count < 2 || (long)plan.Count * plan.Count * candidates.Count > MaxWork)
-            return plan;   // lô quá lớn: bỏ qua bước này để request không treo máy
+        var full = fullRejections.ToList();
+        if (plan.Count == 0
+            || (long)plan.Count * (plan.Count + candidates.Count + full.Count) * candidates.Count > MaxWork)
+            return (plan, full);   // lô quá lớn: bỏ qua bước này để request không treo máy
 
         var typeOfSlot = new Dictionary<Slot, string>();
-        var levels = new Dictionary<(Rack, int), List<Slot>>();
+        var rows = new Dictionary<(Rack, int), List<Slot>>();   // tầng thường và hàng nóc của từng kệ
+        var slotOf = new Dictionary<Slot, SlotCandidate>();
         foreach (var c in candidates)
         {
-            if (!c.Slot.IsTop)
-            {
-                if (!levels.TryGetValue((c.Rack, c.Slot.Level), out var level))
-                    levels[(c.Rack, c.Slot.Level)] = level = new List<Slot>();
-                level.Add(c.Slot);
-            }
+            slotOf[c.Slot] = c;
+            if (!rows.TryGetValue((c.Rack, c.Slot.Level), out var row))
+                rows[(c.Rack, c.Slot.Level)] = row = new List<Slot>();
+            row.Add(c.Slot);
             var held = reserved is not null && reserved.TryGetValue(c.Slot, out var r) ? r : c.Slot.AssignedSize;
             if (held is not null)
                 typeOfSlot[c.Slot] = held;
@@ -164,10 +200,12 @@ public static class Allocator
         foreach (var p in plan)
             typeOfSlot[p.Target.Slot] = p.Pallet.Size.Code;
 
-        var score = Mixing();
+        var score = Mixing.Of(rows, typeOfSlot);
         for (int round = 0; round < MaxImproveRounds; round++)
         {
             var changed = false;
+
+            // Đổi chỗ hai pallet khác type.
             for (int i = 0; i < plan.Count; i++)
             {
                 for (int j = i + 1; j < plan.Count; j++)
@@ -181,7 +219,7 @@ public static class Allocator
 
                     typeOfSlot[a.Target.Slot] = typeB;
                     typeOfSlot[b.Target.Slot] = typeA;
-                    var trial = Mixing();
+                    var trial = Mixing.Of(rows, typeOfSlot);
                     if (trial.CompareTo(score) < 0)
                     {
                         score = trial;
@@ -196,20 +234,65 @@ public static class Allocator
                     }
                 }
             }
+
+            // Dời một pallet sang khung trống cùng loại (thường/nóc) mà nó vừa.
+            for (int i = 0; i < plan.Count; i++)
+            {
+                var a = plan[i];
+                var type = a.Pallet.Size.Code;
+                foreach (var c in candidates)
+                {
+                    var slot = c.Slot;
+                    if (slot.IsTop != a.Target.Slot.IsTop || typeOfSlot.ContainsKey(slot) || !fits[a.Pallet].Contains(slot))
+                        continue;
+
+                    typeOfSlot.Remove(a.Target.Slot);
+                    typeOfSlot[slot] = type;
+                    var trial = Mixing.Of(rows, typeOfSlot);
+                    if (trial.CompareTo(score) < 0)
+                    {
+                        score = trial;
+                        a = plan[i] = new Placement(a.Pallet, slotOf[slot]);
+                        changed = true;
+                    }
+                    else
+                    {
+                        typeOfSlot.Remove(slot);                       // không tốt hơn: trả lại như cũ
+                        typeOfSlot[a.Target.Slot] = type;
+                    }
+                }
+            }
+
+            // Thay pallet đã xếp bằng pallet đang ở lại trong lô (khác type, vừa khung đó).
+            for (int i = 0; i < plan.Count; i++)
+            {
+                for (int k = 0; k < full.Count; k++)
+                {
+                    var (a, waiting) = (plan[i], full[k].Pallet);
+                    var (typeA, typeW) = (a.Pallet.Size.Code, waiting.Size.Code);
+                    if (typeA == typeW || !fits[waiting].Contains(a.Target.Slot))
+                        continue;
+
+                    typeOfSlot[a.Target.Slot] = typeW;
+                    var trial = Mixing.Of(rows, typeOfSlot);
+                    if (trial.CompareTo(score) < 0)
+                    {
+                        score = trial;
+                        plan[i] = new Placement(waiting, a.Target);
+                        full[k] = new Rejection(a.Pallet, FullReason);
+                        changed = true;
+                    }
+                    else
+                    {
+                        typeOfSlot[a.Target.Slot] = typeA;              // không tốt hơn: trả lại như cũ
+                    }
+                }
+            }
+
             if (!changed)
                 break;
         }
-        return plan;
-
-        // Điểm "lẫn" của trạng thái hiện tại (nhỏ hơn là tốt hơn): tầng lẫn, cặp (tầng, type), kệ lẫn. Nóc không tính.
-        (int MixedLevels, int Pairs, int MixedRacks) Mixing()
-        {
-            var types = levels.Select(kv => (Rack: kv.Key.Item1,
-                Set: kv.Value.Where(typeOfSlot.ContainsKey).Select(s => typeOfSlot[s]).ToHashSet())).ToList();
-            return (types.Count(t => t.Set.Count > 1),
-                    types.Sum(t => t.Set.Count),
-                    types.GroupBy(t => t.Rack).Count(g => g.SelectMany(t => t.Set).Distinct().Count() > 1));
-        }
+        return (plan, full);
     }
 
     /// <summary>
@@ -417,24 +500,9 @@ public static class Allocator
             return here.Contains(type) ? 0 : here.Count >= 2 ? 1 : 2;
         }
 
-        // Chấm điểm trạng thái CUỐI (hàng cũ + hàng vừa xếp). Tầng và kệ chỉ tính khung thường.
+        // Chấm điểm trạng thái CUỐI (hàng cũ + hàng vừa xếp).
         Score Evaluate()
-        {
-            var levels = slotsOfLevel
-                .Where(kv => !kv.Value[0].IsTop)
-                .Select(kv => (Rack: kv.Key.Item1,
-                               Types: kv.Value.Where(typeOfSlot.ContainsKey).Select(s => typeOfSlot[s]).ToHashSet()))
-                .ToList();
-            var mixedRacks = levels
-                .GroupBy(l => l.Rack)
-                .Count(g => g.SelectMany(l => l.Types).Distinct().Count() > 1);
-            return new Score(
-                full.Count,
-                placements.Count(p => p.IsTop),
-                levels.Count(l => l.Types.Count > 1),
-                levels.Sum(l => l.Types.Count),
-                mixedRacks);
-        }
+            => new(full.Count, placements.Count(p => p.IsTop), Mixing.Of(slotsOfLevel, typeOfSlot));
     }
 
     private static double Volume(Pallet pallet)

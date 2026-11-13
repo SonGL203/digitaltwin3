@@ -29,4 +29,34 @@ public class SlotModelTests
 
         Assert.Equal(badParam, ex.ParamName);
     }
+
+    // Kệ: ô rộng bayWidth (dọc ô) × sâu depth.
+    private static Rack RackWith(double bayWidth, double depth)
+        => new(1, "K1", 0, 0, 0, 2, 1.5, 3, bayWidth, depth, false, 1000, null);
+
+    [Fact]
+    public void PalletFootprint_SquarePallet_KeepsItsRealSize()
+    {
+        // Pallet vuông 0,8 × 0,8 trong khung 1,2 × 1,0: vẽ đúng 0,8 × 0,8, không phải bằng cả khung.
+        var footprint = Slot.PalletFootprint(RackWith(1.2, 1.0), new PalletSize("A", 0.8, 0.8, 1.0, "#888"));
+
+        Assert.Equal((0.8, 0.8), footprint);
+    }
+
+    [Fact]
+    public void PalletFootprint_FitsWithoutTurning_LengthRunsAlongTheBay()
+    {
+        var footprint = Slot.PalletFootprint(RackWith(1.2, 1.0), new PalletSize("A", 1.2, 0.8, 1.0, "#888"));
+
+        Assert.Equal((1.2, 0.8), footprint);
+    }
+
+    [Fact]
+    public void PalletFootprint_FitsOnlyTurned_IsRotated90()
+    {
+        // Khung 0,9 × 1,2: pallet 1,2 × 0,8 chỉ vừa khi xoay (giống CanHold): 0,8 dọc ô, 1,2 theo chiều sâu.
+        var footprint = Slot.PalletFootprint(RackWith(0.9, 1.2), new PalletSize("A", 1.2, 0.8, 1.0, "#888"));
+
+        Assert.Equal((0.8, 1.2), footprint);
+    }
 }

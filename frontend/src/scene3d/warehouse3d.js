@@ -11,6 +11,7 @@ const WALL_HEIGHT = 3;
 const POST = 0.06;     // cạnh thanh đứng của kệ
 const BOARD = 0.04;    // độ dày tấm ngang của kệ
 const SLOT_SCALE = 0.9;   // khung vẽ nhỏ hơn ô một chút để thấy khe giữa các khung
+const TOP_PLATE = 0.02;   // khung nóc: tấm phẳng mỏng (nóc không có trần)
 
 export function createWarehouse3d(container, { getReplay = () => null } = {}) {
   const scene = new THREE.Scene();
@@ -50,7 +51,7 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
   container.appendChild(speedBar);
 
   let pickables = [];       // { mesh, slot, rack }
-  let flights = [];         // pallet đang bay: { flyer, target, finalColor, finalOpacity, from, to, delay, elapsed }
+  let flights = [];         // pallet đang bay: { flyer, target, from, to, delay, elapsed }
   let speed = 1;
   const clock = new THREE.Clock();
   let selectedMesh = null;
@@ -146,26 +147,57 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
         continue;
       }
 
+      // Khung: luôn là hộp trong suốt có viền (kể cả khi có hàng), để nhìn thấy khung lớn hơn pallet bao nhiêu.
       const { sizeX, sizeZ } = bayFootprint(rack);
       const occupied = slot.palletId != null;
+      // Nóc không có trần (không giới hạn chiều cao): chỉ vẽ một tấm phẳng mỏng có viền đánh dấu vị trí, pallet đặt
+      // thẳng lên tấm đó. Khung thường là hộp cao một tầng.
+      const floor = (slot.level - 1) * rack.levelHeight;
+      const frameHeight = slot.isTop ? TOP_PLATE : rack.levelHeight * SLOT_SCALE;
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(sizeX * SLOT_SCALE, rack.levelHeight * SLOT_SCALE, sizeZ * SLOT_SCALE),
-        new THREE.MeshStandardMaterial({
-          color: occupied ? new THREE.Color(slot.color) : 0x2563eb,
-          transparent: true,
-          opacity: occupied ? 0.92 : 0.07,
-        }),
+        new THREE.BoxGeometry(sizeX * SLOT_SCALE, frameHeight, sizeZ * SLOT_SCALE),
+        new THREE.MeshStandardMaterial({ color: 0x2563eb, transparent: true, opacity: slot.isTop ? 0.15 : occupied ? 0.04 : 0.07 }),
       );
-      mesh.position.set(center.x, center.y, center.z);
+      mesh.position.set(center.x, slot.isTop ? floor + BOARD / 2 + frameHeight / 2 : center.y, center.z);
       mesh.add(new THREE.LineSegments(
         new THREE.EdgesGeometry(mesh.geometry),
-        new THREE.LineBasicMaterial({ color: occupied ? 0x1d2433 : 0x9db8f0 }),
+        new THREE.LineBasicMaterial({ color: occupied ? 0x6b7a99 : 0x9db8f0 }),
       ));
       content.add(mesh);
-      pickables.push({ mesh, slot, rack });
+
+      const pallet = occupied ? buildPallet(rack, slot, center) : null;
+      pickables.push({ mesh, slot, rack, pallet });
     }
 
     return missingPosition;
+  }
+
+  /**
+   * Khối pallet ĐÚNG số đo (server trả sẵn chiều đặt trong khung: dọc ô × theo chiều sâu kệ), nằm trên mặt tầng,
+   * giữa ô. Pallet vuông 0,8 × 0,8 trong khung 1,2 × 1,0 hiện là khối vuông, quanh nó vẫn thấy phần khung trống.
+   * Server cũ chưa trả số đo thì vẽ bằng khung như trước.
+   */
+  function buildPallet(rack, slot, center) {
+    const { sizeX, sizeZ } = bayFootprint(rack);
+    const along = slot.palletAlongBay ?? rack.bayWidth * SLOT_SCALE;
+    const across = slot.palletAcrossDepth ?? rack.depth * SLOT_SCALE;
+    const height = slot.palletHeight ?? rack.levelHeight * SLOT_SCALE;
+    // Dọc ô là trục x khi kệ không xoay, trục z khi kệ xoay 90° (giống bayFootprint).
+    const [dx, dz] = rack.rotation === 90 ? [across, along] : [along, across];
+    // Mặt tấm ngang của tầng; trên nóc thì đặt lên tấm phẳng đánh dấu khung nóc.
+    const floor = (slot.level - 1) * rack.levelHeight + BOARD / 2 + (slot.isTop ? TOP_PLATE : 0);
+
+    const pallet = new THREE.Mesh(
+      new THREE.BoxGeometry(Math.min(dx, sizeX), height, Math.min(dz, sizeZ)),
+      new THREE.MeshStandardMaterial({ color: new THREE.Color(slot.color), transparent: true, opacity: 0.95 }),
+    );
+    pallet.position.set(center.x, floor + height / 2, center.z);
+    pallet.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(pallet.geometry),
+      new THREE.LineBasicMaterial({ color: 0x1d2433 }),
+    ));
+    content.add(pallet);
+    return pallet;
   }
 
   function fitCamera(layout) {
@@ -249,11 +281,13 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
       -((e.clientY - rect.top) / rect.height) * 2 + 1,
     );
     raycaster.setFromCamera(pointer, camera);
-    const hit = raycaster.intersectObjects(pickables.map((p) => p.mesh), false)[0];
-    const picked = hit ? pickables.find((p) => p.mesh === hit.object) : null;
+    // Bắt cả khung lẫn khối pallet: pallet trên nóc cao hơn tấm nóc nên phải bấm được vào chính pallet.
+    const targets = pickables.flatMap((p) => (p.pallet ? [p.mesh, p.pallet] : [p.mesh]));
+    const hit = raycaster.intersectObjects(targets, false)[0];
+    const picked = hit ? pickables.find((p) => p.mesh === hit.object || p.pallet === hit.object) : null;
 
     if (selectedMesh) selectedMesh.material.emissive.setHex(0x000000);
-    selectedMesh = picked?.mesh ?? null;
+    selectedMesh = picked?.pallet ?? picked?.mesh ?? null;   // có hàng thì sáng khối pallet, trống thì sáng khung
     if (selectedMesh) selectedMesh.material.emissive.setHex(0x553300);
     showSlotInfo(picked);
   });
@@ -288,19 +322,17 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
 
     placements.forEach((placement, i) => {
       const target = bySlotCode.get(placement.slotCode);
-      if (!target) return;
-      const material = target.mesh.material;
+      if (!target?.pallet) return;   // khung chưa có khối pallet (dữ liệu chưa tải lại): không có gì để bay
+      // Bay chính khối pallet đúng số đo; khối thật trong khung ẩn đi cho tới khi bay tới.
       const flight = {
-        target, from, to: target.mesh.position.clone(),
-        finalColor: material.color.clone(), finalOpacity: material.opacity,
+        target, from, to: target.pallet.position.clone(),
         flyer: new THREE.Mesh(
-          target.mesh.geometry.clone(),
+          target.pallet.geometry.clone(),
           new THREE.MeshStandardMaterial({ color: new THREE.Color(placement.color) }),
         ),
         delay: i * START_DELAY, elapsed: 0,
       };
-      material.color.setHex(0x2563eb);
-      material.opacity = 0.07;
+      target.pallet.visible = false;
       flight.flyer.visible = false;
       content.add(flight.flyer);
       flights.push(flight);
@@ -308,9 +340,7 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
   }
 
   function landed(flight) {
-    const material = flight.target.mesh.material;
-    material.color.copy(flight.finalColor);
-    material.opacity = flight.finalOpacity;
+    flight.target.pallet.visible = true;
     content.remove(flight.flyer);
     flight.flyer.geometry.dispose();
     flight.flyer.material.dispose();

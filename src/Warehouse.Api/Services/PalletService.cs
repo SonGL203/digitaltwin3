@@ -272,9 +272,11 @@ public class PalletService(IWarehouseStore store) : IPalletService
         var slots = candidates.Select(c =>
         {
             var pallet = c.Slot.PalletId is int id ? pallets.GetValueOrDefault(id) : null;
+            (double AlongBay, double AcrossDepth)? footprint = pallet is null ? null : Slot.PalletFootprint(c.Rack, pallet.Size);
             return new SlotViewModel(
                 c.Slot.Id, c.Rack.Id, c.Rack.Code, c.Slot.Code, c.Slot.Level, c.Slot.Bay, c.Slot.IsTop,
-                c.Slot.PalletId, pallet?.Code, pallet?.Size.Code, pallet?.Size.Color);
+                c.Slot.PalletId, pallet?.Code, pallet?.Size.Code, pallet?.Size.Color,
+                footprint?.AlongBay, footprint?.AcrossDepth, pallet?.Size.Height);
         }).ToList();
 
         return ServiceResult<IReadOnlyList<SlotViewModel>>.Ok(slots);

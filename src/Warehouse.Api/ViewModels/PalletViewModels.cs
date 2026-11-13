@@ -70,9 +70,13 @@ public record RoomShareViewModel(int RoomId, string RoomName, int Count, IReadOn
 public record DistributionViewModel(
     int? BatchId, int Total, int Placed, IReadOnlyList<RoomShareViewModel> Rooms, IReadOnlyList<RejectionViewModel> Rejected);
 
-/// <summary>Một khung của phòng; pallet/type/màu null khi khung trống.</summary>
+/// <summary>
+/// Một khung của phòng; pallet/type/màu/số đo null khi khung trống. Số đo pallet (mét) đã tính chiều đặt trong khung
+/// (Slot.PalletFootprint): PalletAlongBay dọc ô, PalletAcrossDepth theo chiều sâu kệ, để 3D vẽ đúng hình pallet.
+/// </summary>
 public record SlotViewModel(
     int Id, int RackId, string RackCode, string Code, int Level, int Bay, bool IsTop,
-    int? PalletId, string? PalletCode, string? TypeCode, string? Color);
+    int? PalletId, string? PalletCode, string? TypeCode, string? Color,
+    double? PalletAlongBay = null, double? PalletAcrossDepth = null, double? PalletHeight = null);
 
 public record ResetViewModel(int Cleared);

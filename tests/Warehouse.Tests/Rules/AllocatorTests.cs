@@ -499,6 +499,83 @@ public class AllocatorTests
         Assert.Equal(2, MixedLevels(candidates, result));              // K3 T4 (E, D) bắt buộc lẫn; K4 T2 (B, D)
     }
 
+    // "Phòng 3" ngay trước lô b77 (2026-11-13): 3 kệ có nóc, ô rộng 2,2 m (K1, K2) và 1,2 m (K3), cao tầng 1,2 m.
+    // Còn 12 khung thường (K1 T2 ba ô, K1 T3, K2 T4 một ô, K3 T3) + 10 khung nóc (K1 hai ô, K2, K3).
+    private static List<SlotCandidate> Room3BeforeBatch77()
+    {
+        Rack R(string code, int levels, double bayWidth) => new(1, code, 0, 0, 0, levels, 1.2, 4, bayWidth, 1.0, true, 1000, null);
+        var candidates = Candidates(R("K1", 3, 2.2), R("K2", 4, 2.2), R("K3", 3, 1.2))
+            .OrderBy(c => c.Slot.IsTop).ToList();   // như PalletService.PlacementOrder
+        void Put(string rack, bool top, string type, double l, double w, double h, params int[] indexes)
+        {
+            var slots = candidates.Where(c => c.Rack.Code == rack && c.Slot.IsTop == top).ToList();
+            foreach (var i in indexes)
+                slots[i].Slot.Place(Typed(type, 1, l, w, h)[0]);
+        }
+        // Lô b76. Chỉ số khung thường = (tầng - 1) × 4 + (ô - 1); nóc 0..3.
+        Put("K1", false, "E", 1.0, 0.8, 0.9, 0, 1, 2, 3, 4);                    // T1 đủ, T2 R1
+        Put("K1", true, "B", 1.2, 0.8, 1.6, 0, 1);                              // nóc R1, R2
+        Put("K2", false, "A", 1.2, 0.8, 1.0, Enumerable.Range(0, 15).ToArray()); // T1–T3 đủ, T4 R1–R3
+        Put("K3", false, "D", 0.8, 0.6, 0.7, Enumerable.Range(0, 8).ToArray());  // T1, T2
+        return candidates;
+    }
+
+    // Số hàng nóc (của từng kệ) có từ 2 type trở lên sau khi xếp, tính cả hàng đã có sẵn.
+    private static int MixedTopRows(List<SlotCandidate> candidates, AllocationResult result)
+    {
+        var typeOf = candidates.Where(c => c.Slot.AssignedSize is not null).ToDictionary(c => c.Slot, c => c.Slot.AssignedSize!);
+        foreach (var p in result.Placements)
+            typeOf[p.Target.Slot] = p.Pallet.Size.Code;
+        return candidates
+            .Where(c => c.Slot.IsTop)
+            .GroupBy(c => c.Rack)
+            .Count(row => row.Where(c => typeOf.ContainsKey(c.Slot)).Select(c => typeOf[c.Slot]).Distinct().Count() > 1);
+    }
+
+    [Fact]
+    public void Allocate_Room3Batch77_FullLot_LeavesTheLoneEBehindSoNoRoofIsMixed()
+    {
+        // Lô b77 thật: 30 pallet (14 A, 7 B 1,6 m chỉ vừa nóc, 4 E, 5 D) mà kho chỉ còn 22 chỗ: 8 pallet phải ở lại lô.
+        // Chọn để lại pallet nào cho kho gọn nhất: khung thường không lẫn tầng nào, và để lại cái E lẻ (thay vì một
+        // cái A) thì không hàng nóc nào lẫn (nóc K1 = B, nóc K2 = B, nóc K3 = A).
+        var candidates = Room3BeforeBatch77();
+        var pallets = Typed("A", 14, 1.2, 0.8, 1.0)
+            .Concat(Typed("B", 7, 1.2, 0.8, 1.6))
+            .Concat(Typed("E", 4, 1.0, 0.8, 0.9))
+            .Concat(Typed("D", 5, 0.8, 0.6, 0.7)).ToList();
+
+        var result = Allocator.Allocate(pallets, candidates, Margin);
+
+        Assert.Equal(22, result.Placements.Count);
+        Assert.Equal(8, result.Rejected.Count);
+        Assert.All(result.Rejected, r => Assert.Equal(Allocator.FullReason, r.Reason));
+        Assert.Equal(10, result.ToTop.Count);
+        Assert.Equal(0, MixedLevels(candidates, result));
+        Assert.Equal(0, MixedTopRows(candidates, result));
+    }
+
+    [Fact]
+    public void Allocate_Room3Batch77_LoneTopPalletGoesOnTheRoofOfItsOwnTypesRack()
+    {
+        // Chỉ 22 pallet đã xếp được của lô b77 (14 A, 4 E, 4 D): vừa đủ 12 khung thường + 10 nóc, đúng 10 lên nóc.
+        // Khung thường xếp không lẫn tầng nào; E còn 1 cái phải lên nóc. Bản cũ chấm điểm bỏ qua nóc nên E lên nóc K2
+        // (giữa các A); đúng ra phải lên nóc K1, ngay trên các E của nó.
+        var candidates = Room3BeforeBatch77();
+        var pallets = Typed("A", 14, 1.2, 0.8, 1.0)
+            .Concat(Typed("E", 4, 1.0, 0.8, 0.9))
+            .Concat(Typed("D", 4, 0.8, 0.6, 0.7)).ToList();
+
+        var result = Allocator.Allocate(pallets, candidates, Margin);
+
+        Assert.Empty(result.Rejected);
+        Assert.Equal(22, result.Placements.Count);
+        Assert.Equal(10, result.ToTop.Count);
+        Assert.Equal(0, MixedLevels(candidates, result));                       // khung thường: không tầng nào lẫn
+        var eOnTop = Assert.Single(result.ToTop, p => p.Pallet.Size.Code == "E");
+        Assert.Equal("K1", eOnTop.Target.Rack.Code);                            // E lẻ lên nóc kệ của E
+        Assert.All(result.ToTop.Where(p => p.Target.Rack.Code != "K1"), p => Assert.Equal("A", p.Pallet.Size.Code));
+    }
+
     [Fact]
     public void Allocate_InAMixedRack_PicksTheEmptySlotRightNextToTheSameType()
     {

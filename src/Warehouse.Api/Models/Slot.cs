@@ -71,6 +71,20 @@ public class Slot
     }
 
     /// <summary>
+    /// Pallet nằm trong khung theo chiều nào, để vẽ đúng hình: (dọc ô, theo chiều sâu kệ) bằng mét.
+    /// Cùng thứ tự CanHold thử: vừa mà không xoay thì giữ nguyên (dài dọc ô), không vừa thì xoay 90°.
+    /// Không kiểm tra pallet có vừa khung không (việc của CanHold); frontend không tự tính chiều xoay.
+    /// </summary>
+    public static (double AlongBay, double AcrossDepth) PalletFootprint(Rack rack, PalletSize size)
+    {
+        ArgumentNullException.ThrowIfNull(rack);
+        ArgumentNullException.ThrowIfNull(size);
+        return Tolerance.AtMost(size.Length, rack.BayWidth) && Tolerance.AtMost(size.Width, rack.Depth)
+            ? (size.Length, size.Width)
+            : (size.Width, size.Length);
+    }
+
+    /// <summary>
     /// Đặt pallet vào khung: ghi PalletId và nhãn AssignedSize (mã type của pallet) cùng lúc.
     /// Không tự gọi CanHold; chỉ chặn khung đã có pallet.
     /// </summary>
