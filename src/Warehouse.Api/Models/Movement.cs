@@ -2,17 +2,13 @@ namespace Warehouse.Api.Models;
 
 public enum MovementType
 {
-    /// <summary>Nhập kho: không có khung đi, có khung đến.</summary>
     Receive,
 
-    /// <summary>Chuyển khung: có cả khung đi và khung đến.</summary>
     Move,
 
-    /// <summary>Xuất kho: có khung đi, không có khung đến.</summary>
     Ship,
 }
 
-/// <summary>Lịch sử một lần di chuyển pallet.</summary>
 public class Movement
 {
     public int Id { get; private set; }

@@ -16,10 +16,8 @@ builder.Services.AddScoped<ILayoutService, LayoutService>();
 builder.Services.AddScoped<IPalletService, PalletService>();
 var app = builder.Build();
 
-// Đầu pipeline để bắt mọi lỗi phía sau (xem ApiExceptionHandler).
 app.UseExceptionHandler();
 
-// Phòng mẫu cho demo: bật bằng "Seed:SampleLayout": true. Tắt khi muốn tự vẽ phòng từ đầu.
 if (app.Configuration.GetValue<bool>("Seed:SampleLayout"))
 {
     using (var scope = app.Services.CreateScope())

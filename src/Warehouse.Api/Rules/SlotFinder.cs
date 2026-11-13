@@ -8,7 +8,10 @@ public sealed record SlotSearchResult(
     int FittingCount,
     IReadOnlyList<string> RejectionReasons)
 {
-    public bool HasAnyFittingSlot => FittingCount > 0;
+    public bool HasAnyFittingSlot
+    {
+        get { return FittingCount > 0; }
+    }
 }
 public static class SlotFinder
 {

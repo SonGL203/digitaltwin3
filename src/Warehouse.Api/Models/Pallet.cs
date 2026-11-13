@@ -1,11 +1,5 @@
 namespace Warehouse.Api.Models;
 
-/// <summary>
-/// Một pallet hàng thật. Mã do hệ thống sinh khi nhập lô (b1-P001…).
-/// Số đo và khối lượng không lưu ở đây mà nằm ở Size (PalletSize): mọi pallet cùng type có thông số y hệt nhau,
-/// nên chỉ lưu một lần ở type. Không lưu vị trí (Slot.PalletId giữ), không lưu hướng xoay.
-/// ProductTypeId là loại hàng trên pallet (ốc vít, bánh xe…); null nghĩa là hàng chưa phân loại.
-/// </summary>
 public class Pallet
 {
     public int Id { get; private set; }
@@ -15,8 +9,6 @@ public class Pallet
     public string Code { get; private set; }
     public int? ProductTypeId { get; private set; }
 
-    // EF Core không nạp được thuộc tính điều hướng (Size) qua constructor, nên cần constructor riêng chỉ có giá trị đơn
-    // (tên tham số trùng tên thuộc tính). EF gán Size sau theo SizeId. Chỉ EF dùng, nên private.
     private Pallet(int batchId, int sizeId, string code, int? productTypeId)
     {
         BatchId = batchId;

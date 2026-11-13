@@ -1,10 +1,5 @@
 namespace Warehouse.Api.Models;
 
-/// <summary>
-/// Một khung kệ, sinh từ cấu hình kệ (mã dạng K1-T1-R1, nóc là K1-N-R1).
-/// Kích thước khung không lưu: lấy từ Rack (rộng = BayWidth, sâu = Depth, cao = LevelHeight; nóc không giới hạn cao).
-/// AssignedSize (nhãn) và PalletId luôn cùng có giá trị hoặc cùng null; sẽ do Place()/Remove() ghi.
-/// </summary>
 public class Slot
 {
     public int Id { get; private set; }
@@ -32,17 +27,8 @@ public class Slot
         IsTop = isTop;
     }
 
-    /// <summary>Khung đang trống (không có pallet).</summary>
     public bool IsEmpty => PalletId is null;
 
-    /// <summary>
-    /// Khung này nhận được pallet này không? Trả về null nếu được, ngược lại trả câu lý do.
-    /// Nhận Rack làm tham số vì kích thước khung nằm ở kệ (Slot không lưu). Pallet được xoay 90° nếu xoay thì vừa.
-    /// Khung nóc không giới hạn chiều cao. margin là khoảng hở giữa đỉnh pallet và thanh ngang phía trên (Room.Margin).
-    /// Thứ tự kiểm tra: loại hàng, đáy, chiều cao, tải trọng. Không kiểm tra khung trống hay không (việc của Allocator và Place).
-    /// Loại hàng: kệ chung (ProductTypeId null) nhận mọi pallet; kệ chuyên chỉ nhận pallet đúng loại của nó,
-    /// pallet chưa phân loại chỉ vào được kệ chung.
-    /// </summary>
     public string? CanHold(Rack rack, Pallet pallet, double margin)
     {
         ArgumentNullException.ThrowIfNull(rack);
@@ -70,11 +56,6 @@ public class Slot
         return null;
     }
 
-    /// <summary>
-    /// Pallet nằm trong khung theo chiều nào, để vẽ đúng hình: (dọc ô, theo chiều sâu kệ) bằng mét.
-    /// Cùng thứ tự CanHold thử: vừa mà không xoay thì giữ nguyên (dài dọc ô), không vừa thì xoay 90°.
-    /// Không kiểm tra pallet có vừa khung không (việc của CanHold); frontend không tự tính chiều xoay.
-    /// </summary>
     public static (double AlongBay, double AcrossDepth) PalletFootprint(Rack rack, PalletSize size)
     {
         ArgumentNullException.ThrowIfNull(rack);
@@ -84,10 +65,6 @@ public class Slot
             : (size.Width, size.Length);
     }
 
-    /// <summary>
-    /// Đặt pallet vào khung: ghi PalletId và nhãn AssignedSize (mã type của pallet) cùng lúc.
-    /// Không tự gọi CanHold; chỉ chặn khung đã có pallet.
-    /// </summary>
     public void Place(Pallet pallet)
     {
         ArgumentNullException.ThrowIfNull(pallet);
@@ -98,7 +75,6 @@ public class Slot
         AssignedSize = pallet.Size.Code;
     }
 
-    /// <summary>Lấy pallet ra: xoá cả PalletId và nhãn. Gọi trên khung trống thì không có gì thay đổi.</summary>
     public void Remove()
     {
         PalletId = null;

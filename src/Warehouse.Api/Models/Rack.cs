@@ -4,7 +4,6 @@ public class Rack
     public int Id { get; private set; }
     public int RoomId { get; private set; }
     public string Code { get; private set; }
-    /// <summary>Góc trên trái của kệ trên sàn (m).</summary>
     public double X { get; private set; }
     public double Y { get; private set; }
     public int Rotation { get; private set; }
@@ -30,10 +29,6 @@ public class Rack
         Reconfigure(x, y, rotation, levels, levelHeight, bays, bayWidth, depth, hasTop, maxWeight, productTypeId);
     }
 
-    /// <summary>
-    /// Đổi vị trí và cấu hình (mọi thứ trừ mã). Kiểm tra HẾT rồi mới gán, để số sai không làm kệ bị sửa dở.
-    /// Sau khi đổi phải sinh lại khung (CreateSlots): việc của service.
-    /// </summary>
     public void Reconfigure(double x, double y, int rotation, int levels, double levelHeight,
                             int bays, double bayWidth, double depth, bool hasTop, double maxWeight, int? productTypeId)
     {
@@ -92,11 +87,6 @@ public class Rack
         return slots;
     }
 
-    /// <summary>
-    /// Hình chữ nhật kệ chiếm trên sàn (m). Dài = Bays × BayWidth, sâu = Depth.
-    /// Rotation 0: dài theo trục X. Rotation 90: dài theo trục Y (đổi chỗ hai cạnh).
-    /// Không còn làm tròn ra ô nên không còn lỗi kiểu 11,000000000000002 ô.
-    /// </summary>
     public Rect GetBounds()
     {
         var length = Bays * BayWidth;

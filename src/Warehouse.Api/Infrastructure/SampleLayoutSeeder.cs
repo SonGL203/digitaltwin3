@@ -4,27 +4,17 @@ using System.Text.Json;
 using Warehouse.Api.Services;
 using Warehouse.Api.ViewModels;
 
-/// <summary>Nội dung file phòng mẫu: đúng hình dạng JSON của bản nháp mà frontend gửi lên (id bỏ trống = mới).</summary>
 public record SampleLayout(RoomRequest Room, LayoutObstacleRequest[] Obstacles, LayoutRackRequest[] Racks);
 
-/// <summary>Nội dung file lô mẫu: mỗi lô là các dòng "số lượng + số đo", đúng hình dạng JSON của màn Nhập hàng.</summary>
 public record SampleBatches(SampleBatch[] Batches);
 
 public record SampleBatch(string Name, BatchLineRequest[] Lines);
 
-/// <summary>
-/// Tạo dữ liệu demo khi database chưa có phòng nào: một phòng mẫu và (nếu có file) vài lô hàng đã xếp sẵn.
-/// Đi qua LayoutService và PalletService (không ghi thẳng DbContext) để dữ liệu mẫu cũng phải qua đúng các luật như
-/// khi người dùng tự làm: vật cản trong phòng, không đè kệ, PlacementValidator, sinh khung trong transaction,
-/// khớp type pallet bằng PalletSizer, xếp bằng Allocator.
-/// </summary>
 public static class SampleLayoutSeeder
 {
     public static void Seed(
         ILayoutService layout, ILogger logger, string path, IPalletService? pallets = null, string? batchesPath = null)
     {
-        // Đã có phòng nào thì không đụng tới: seed chạy mỗi lần khởi động nhưng chỉ có tác dụng lần đầu,
-        // và không bao giờ ghi đè hay thêm phòng khi người dùng đã có phòng của mình.
         if (layout.GetRooms().Value!.Count > 0)
             return;
 
@@ -33,7 +23,6 @@ public static class SampleLayoutSeeder
 
         var roomId = Check(layout.CreateRoom(sample.Room), "phòng").Id;
 
-        // Cả phòng mẫu đi qua đúng một lần lưu bản nháp, như khi người dùng bấm Lưu nháp (phòng vừa tạo có Version 0).
         var room = sample.Room;
         var draft = new LayoutRequest
         {
@@ -50,7 +39,6 @@ public static class SampleLayoutSeeder
             SeedBatches(pallets, logger, roomId, batchesPath);
     }
 
-    // Mỗi lô: nhập (lưu lô và pallet) rồi xếp vào phòng mẫu, đúng hai bước như màn Nhập hàng.
     private static void SeedBatches(IPalletService pallets, ILogger logger, int roomId, string path)
     {
         var sample = JsonSerializer.Deserialize<SampleBatches>(File.ReadAllText(path), JsonSerializerOptions.Web)
@@ -67,7 +55,6 @@ public static class SampleLayoutSeeder
         }
     }
 
-    // Lỗi thì dừng ngay lúc khởi động, kèm lý do của service, thay vì chạy tiếp với dữ liệu mẫu thiếu.
     private static T Check<T>(ServiceResult<T> result, string what)
     {
         if (!result.IsSuccess)

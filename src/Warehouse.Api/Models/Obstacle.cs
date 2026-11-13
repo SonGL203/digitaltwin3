@@ -2,13 +2,10 @@ namespace Warehouse.Api.Models;
 
 public enum ObstacleKind
 {
-    /// <summary>Tường ngăn bên trong phòng (mép phòng không cần vẽ: chính là tường bao).</summary>
     Wall,
-    /// <summary>Cột nhà.</summary>
     Column,
 }
 
-/// <summary>Tường hoặc cột trong phòng: một hình chữ nhật bằng mét. Kệ không được đè lên.</summary>
 public class Obstacle
 {
     public int Id { get; private set; }
@@ -25,7 +22,6 @@ public class Obstacle
         Reconfigure(kind, x, y, width, depth);
     }
 
-    /// <summary>Đổi loại, vị trí, kích thước. Kiểm tra HẾT rồi mới gán, để số sai không làm vật cản bị sửa dở.</summary>
     public void Reconfigure(ObstacleKind kind, double x, double y, double width, double depth)
     {
         if (x < 0)

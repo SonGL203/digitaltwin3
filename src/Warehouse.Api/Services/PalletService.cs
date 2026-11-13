@@ -17,22 +17,11 @@ public interface IPalletService
     ServiceResult<ResetViewModel> ResetPlacements(int roomId);
 }
 
-/// <summary>
-/// Nhập lô và xếp pallet. Chỉ điều phối: lấy dữ liệu từ store → hỏi Rules (PalletSizer, SlotFinder, Allocator) →
-/// áp kết quả (Place) → lưu. Không tự viết lại luật chọn khung, nên số trong xem trước và khi xếp thật khớp nhau
-/// (cùng SlotFinder/Allocator).
-/// Lập lô trước, chọn kho sau. Ba bước tách riêng để bấm lại không xếp đôi: CheckBatch (kiểm tra mọi kho, không ghi gì)
-/// → ReceiveBatch (lưu lô, pallet chưa vào khung) → Distribute (tự chia các kho) hoặc Allocate (một kho người dùng chọn);
-/// cả hai chỉ xếp pallet của lô CHƯA nằm trong khung nào, gọi lần nữa thì không có gì để xếp.
-/// </summary>
 public class PalletService(IWarehouseStore store) : IPalletService
 {
-    /// <summary>Chặn lô quá lớn: Allocator duyệt (pallet × khung) hai lượt, nên giới hạn để một request không treo máy.</summary>
     public const int MaxPalletsPerBatch = 2000;
 
     private sealed record ResolvedLine(BatchLineRequest Line, PalletSize Size, bool IsNew);
-
-    // ---------- loại hàng ----------
 
     public ServiceResult<IReadOnlyList<ProductTypeViewModel>> GetProductTypes()
         => ServiceResult<IReadOnlyList<ProductTypeViewModel>>.Ok(
@@ -57,13 +46,6 @@ public class PalletService(IWarehouseStore store) : IPalletService
         return ServiceResult<ProductTypeViewModel>.Ok(new ProductTypeViewModel(type.Id, type.Code, type.Name));
     }
 
-    // ---------- kiểm tra lô (không ghi gì) ----------
-
-    /// <summary>
-    /// Lập lô trước, chọn kho sau: khớp từng dòng với type, rồi với MỌI kho tính xem nếu nhận riêng cả lô thì xếp được
-    /// bao nhiêu, thiếu bao nhiêu (kèm lý do theo type); cuối cùng là đề xuất chia kho (Distributor).
-    /// Chạy đúng Allocator/Distributor như khi xếp thật (trên pallet tạm trong RAM) nên con số khớp với kết quả thật.
-    /// </summary>
     public ServiceResult<BatchCheckViewModel> CheckBatch(BatchRequest request)
     {
         if (CheckRequest(request) is { } requestError)
@@ -73,7 +55,6 @@ public class PalletService(IWarehouseStore store) : IPalletService
         if (resolved is null)
             return ServiceResult<BatchCheckViewModel>.Fail(ServiceError.Invalid, error!);
 
-        // Pallet tạm (chưa lưu, Id = 0): đủ cho SlotFinder/Allocator vì chỉ đọc số đo qua Size.
         var palletsOfLine = resolved
             .Select(r => Enumerable.Range(0, r.Line.Quantity)
                 .Select(_ => new Pallet(0, r.Size, "xem-truoc", r.Line.ProductTypeId)).ToList())
@@ -111,7 +92,6 @@ public class PalletService(IWarehouseStore store) : IPalletService
             all.Count, lines, roomChecks, ToViewModel(null, all.Count, plan, withPlacements: false)));
     }
 
-    /// <summary>Lý do một dòng không vào đủ một kho; null khi vào đủ.</summary>
     private static string? Shortage(int slotCount, SlotSearchResult search, string typeCode, int needed, int placeable)
     {
         if (!search.HasAnyFittingSlot)
@@ -127,12 +107,6 @@ public class PalletService(IWarehouseStore store) : IPalletService
         return null;
     }
 
-    // ---------- nhập lô ----------
-
-    /// <summary>
-    /// Lưu type mới (nếu có), lô và các pallet (b1-P001…) trong MỘT transaction. Pallet chưa vào khung nào:
-    /// việc xếp là Allocate. Kiểm tra hết trước (chạy thử việc khớp type) để lỗi không làm lưu dở.
-    /// </summary>
     public ServiceResult<BatchReceivedViewModel> ReceiveBatch(BatchRequest request)
     {
         if (CheckRequest(request) is { } requestError)
@@ -145,7 +119,6 @@ public class PalletService(IWarehouseStore store) : IPalletService
         Batch? batch = null;
         store.InTransaction(() =>
         {
-            // Lưu type mới trước: Pallet nhớ SizeId lúc tạo nên type phải có Id rồi.
             var (resolved, _) = ResolveLines(request, save: store.AddPalletSize);
 
             batch = new Batch($"b{store.CountBatches() + 1}", DateTime.UtcNow);
@@ -156,20 +129,13 @@ public class PalletService(IWarehouseStore store) : IPalletService
                     batch.Pallets.Add(new Pallet(0, size, $"{batch.Code}-P{++number:000}", line.ProductTypeId));
             }
 
-            store.AddBatch(batch);   // lô và pallet được gán Id
+            store.AddBatch(batch);
         });
 
         return ServiceResult<BatchReceivedViewModel>.Ok(
             new BatchReceivedViewModel(batch!.Id, batch.Code, batch.Pallets.Count));
     }
 
-    // ---------- xếp ----------
-
-    /// <summary>
-    /// Xếp các pallet CHƯA nằm trong khung nào của lô vào phòng. Trong một transaction: đọc khung, Allocator chọn chỗ,
-    /// Place() từng pallet, lưu khung. Pallet không xếp được (không vừa, hết chỗ) vẫn thuộc lô, chưa có khung;
-    /// thêm kệ rồi bấm Xếp lại sẽ xếp tiếp phần còn lại. Mọi pallet đã xếp thì trả danh sách rỗng, không lỗi.
-    /// </summary>
     public ServiceResult<AllocationViewModel> Allocate(int roomId, int batchId)
     {
         var room = store.GetRoom(roomId);
@@ -186,7 +152,6 @@ public class PalletService(IWarehouseStore store) : IPalletService
                 return;
             }
 
-            // "Đã xếp" xét trên MỌI phòng: pallet nằm trong khung của phòng khác thì không xếp thêm lần nữa.
             var placedIds = store.GetAllSlots().Where(s => s.PalletId is not null).Select(s => s.PalletId!.Value).ToHashSet();
             var unplaced = batch.Pallets.Where(p => !placedIds.Contains(p.Id)).OrderBy(p => p.Id).ToList();
 
@@ -206,12 +171,6 @@ public class PalletService(IWarehouseStore store) : IPalletService
         return outcome;
     }
 
-    // ---------- chia lô ra nhiều kho ----------
-
-    /// <summary>
-    /// Nhập theo đề xuất: chia các pallet CHƯA có khung của lô ra các kho (ưu tiên kho đã có type trùng), trong MỘT
-    /// transaction. Cùng Distributor với CheckBatch nên khớp đề xuất. Bấm lại thì chỉ còn pallet chưa có khung: không xếp đôi.
-    /// </summary>
     public ServiceResult<DistributionViewModel> Distribute(int batchId)
     {
         ServiceResult<DistributionViewModel> outcome = default!;
@@ -256,9 +215,6 @@ public class PalletService(IWarehouseStore store) : IPalletService
         => new(p.Pallet.Code, p.Pallet.Size.Code, p.Pallet.Size.Color,
                p.Target.Rack.Code, p.Target.Slot.Code, p.Target.Slot.Level, p.Target.Slot.Bay, p.Target.Slot.IsTop);
 
-    // ---------- đọc khung, đặt lại ----------
-
-    /// <summary>Mọi khung của phòng (theo kệ → tầng → ô) kèm pallet/type/màu nếu đang có hàng. Dùng để vẽ 3D.</summary>
     public ServiceResult<IReadOnlyList<SlotViewModel>> GetSlots(int roomId)
     {
         var room = store.GetRoom(roomId);
@@ -282,10 +238,6 @@ public class PalletService(IWarehouseStore store) : IPalletService
         return ServiceResult<IReadOnlyList<SlotViewModel>>.Ok(slots);
     }
 
-    /// <summary>
-    /// "Đặt lại": lấy mọi pallet ra khỏi khung của phòng (pallet và lô vẫn còn, chỉ chưa có khung), trong một transaction.
-    /// Sau đó xếp lại bằng Allocate.
-    /// </summary>
     public ServiceResult<ResetViewModel> ResetPlacements(int roomId)
     {
         var room = store.GetRoom(roomId);
@@ -305,8 +257,6 @@ public class PalletService(IWarehouseStore store) : IPalletService
         return ServiceResult<ResetViewModel>.Ok(new ResetViewModel(cleared));
     }
 
-    // ---------- dùng chung ----------
-
     private static string? CheckRequest(BatchRequest request)
     {
         if (request.Lines.Count == 0)
@@ -316,10 +266,6 @@ public class PalletService(IWarehouseStore store) : IPalletService
         return null;
     }
 
-    /// <summary>
-    /// Khớp từng dòng với một type (có sẵn hoặc mới) bằng PalletSizer. Type mới của dòng trước được tính vào danh sách
-    /// cho dòng sau (hai dòng cùng số đo dùng chung một type). save: ghi type mới xuống store (null = chạy thử, không ghi).
-    /// </summary>
     private (List<ResolvedLine>? Lines, string? Error) ResolveLines(BatchRequest request, Action<PalletSize>? save)
     {
         var productTypeIds = store.GetProductTypes().Select(t => t.Id).ToHashSet();
@@ -352,15 +298,9 @@ public class PalletService(IWarehouseStore store) : IPalletService
         return (resolved, null);
     }
 
-    /// <summary>
-    /// Thứ tự khung để XẾP: khung thường của MỌI kệ trước, khung nóc của mọi kệ sau cùng. Nóc là chỗ cuối cùng cho pallet
-    /// quá cao (hoặc khi hết chỗ khác), nên không được chiếm trước một khung thường còn trống ở kệ khác.
-    /// OrderBy ổn định: trong mỗi nhóm vẫn giữ thứ tự kệ → tầng → ô, nên kết quả vẫn tất định.
-    /// </summary>
     private List<SlotCandidate> PlacementOrder(Room room)
         => CandidatesOf(room).OrderBy(c => c.Slot.IsTop).ToList();
 
-    /// <summary>Mọi khung của phòng theo thứ tự kệ → tầng → ô (nóc cuối của từng kệ); dùng để đọc/hiển thị.</summary>
     private List<SlotCandidate> CandidatesOf(Room room)
     {
         var slotsOfRack = store.GetSlotsOfRacks(room.Racks.Select(r => r.Id).ToList()).ToLookup(s => s.RackId);
