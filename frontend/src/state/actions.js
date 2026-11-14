@@ -294,7 +294,11 @@ export async function createRoomFromScan(scanned, source) {
     }));
   });
   goToStep('layout');
-  showMessage(`Bản nháp từ robot: ${scanned.racks.length} kệ, ${scanned.obstacles.length} tường/cột. Số tầng, số ô của kệ là đoán: kiểm tra rồi bấm Lưu nháp.`);
+  // Chỉ nhắc kiểm tra những kệ thật sự cần: số tầng là đoán (robot không đếm được), hoặc kệ chéo đã bị làm tròn về 0°/90°.
+  const review = scanned.racks.filter((r) => r.needsReview).map((r) => r.code);
+  showMessage(`Bản nháp từ robot: ${scanned.racks.length} kệ, ${scanned.obstacles.length} tường/cột.`
+    + (review.length ? ` Cần xem lại ${review.join(', ')} (số tầng đoán hoặc kệ chéo đã làm tròn)` : ' Số tầng các kệ đã đếm được')
+    + ', số ô là đoán theo ô 1,2 m. Kiểm tra rồi bấm Lưu nháp.');
 }
 
 /** Bỏ mọi thay đổi chưa lưu, lấy lại phòng như đã lưu trên server. */

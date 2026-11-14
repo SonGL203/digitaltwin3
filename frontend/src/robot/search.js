@@ -67,6 +67,44 @@ export function findPath(map, start, { goal = -1, isGoal = (i) => i === goal, pa
   return null;
 }
 
+/**
+ * Chi phí đi từ `start` tới MỌI ô (Dijkstra chạy hết, không dừng ở đích nào). Infinity = không tới được.
+ * Dùng khi cần hỏi nhiều đích một lúc (kiểm chứng mọi khung của kho): một lần duyệt thay cho hàng trăm lần A*.
+ * Cùng luật bước như findPath (8 hướng, không cắt góc), nên số liệu khớp với đường robot đi thật.
+ */
+export function costField(map, start, { passable, stepCost = () => 1 }) {
+  const { cols, rows, cellSize } = map;
+  const g = new Float64Array(cols * rows).fill(Infinity);
+  const closed = new Uint8Array(cols * rows);
+  const heap = createHeap();
+  g[start] = 0;
+  heap.push(start, 0);
+  while (heap.size > 0) {
+    const cur = heap.pop();
+    if (closed[cur]) continue;
+    closed[cur] = 1;
+    const c = cur % cols;
+    const r = Math.floor(cur / cols);
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dc === 0 && dr === 0) continue;
+        const nc = c + dc;
+        const nr = r + dr;
+        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+        const next = nr * cols + nc;
+        if (closed[next] || !passable(next)) continue;
+        if (dc !== 0 && dr !== 0 && (!passable(r * cols + nc) || !passable(nr * cols + c))) continue;
+        const cost = g[cur] + (dc !== 0 && dr !== 0 ? SQRT2 : 1) * cellSize * stepCost(next);
+        if (cost < g[next]) {
+          g[next] = cost;
+          heap.push(next, cost);
+        }
+      }
+    }
+  }
+  return g;
+}
+
 /** Chiều dài hình học của đường (mét), không tính phạt. */
 export function pathLength(map, cells) {
   let length = 0;

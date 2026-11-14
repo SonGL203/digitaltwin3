@@ -44,6 +44,15 @@ describe('costmap', () => {
     expect(cm.blocked[cellIndex(map, 2.05, 2.05)]).toBe(1);
   });
 
+  it('mép phòng là tường bao: dải sát mép rộng bằng bán kính robot bị cấm', () => {
+    const map = createGridMap(4, 4);
+    const cm = createCostmap(map, { robotRadius: 0.35 });
+    expect(cm.blocked[cellIndex(map, 0.05, 2)]).toBe(1);
+    expect(cm.blocked[cellIndex(map, 0.25, 2)]).toBe(1);
+    expect(cm.blocked[cellIndex(map, 0.35, 2)]).toBe(0);   // tâm ô 0,35 m: vừa đúng bán kính
+    expect(cm.blocked[cellIndex(map, 3.95, 3.95)]).toBe(1);
+  });
+
   it('updateCostmap chỉ đóng dấu các ô vừa đổi', () => {
     const map = createGridMap(4, 4);
     const cm = createCostmap(map);

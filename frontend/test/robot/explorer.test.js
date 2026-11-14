@@ -52,6 +52,8 @@ describe('explore', () => {
   it('robot không bao giờ chạm vật (tâm luôn cách vật ≥ bán kính − nửa ô)', () => {
     const minGap = 0.35 - 0.05 - 1e-9;
     for (const step of explore(world, start)) {
+      const { x, y } = step.pose;
+      expect(Math.min(x, y, world.width - x, world.depth - y), 'chạm tường bao').toBeGreaterThanOrEqual(minGap);
       for (const b of world.boxes) {
         const dx = Math.max(b.x - step.pose.x, 0, step.pose.x - (b.x + b.width));
         const dy = Math.max(b.y - step.pose.y, 0, step.pose.y - (b.y + b.depth));

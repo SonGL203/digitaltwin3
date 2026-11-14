@@ -1,14 +1,15 @@
 import * as THREE from 'three';
 import { deliver, describeDeliveryEvent } from '../robot/delivery.js';
-import { exploreAll, findStart } from '../robot/explorer.js';
+import { findStart } from '../robot/explorer.js';
+import { mapFromLayout } from '../robot/mapFromLayout.js';
 import { createWorld } from '../robot/world.js';
 
 // Robot chở pallet trong cảnh 3D: thay cho hiệu ứng "pallet bay". Mọi quyết định (đường đi, bước qua / đi vòng,
 // chỗ đứng trước khung) nằm trong src/robot/delivery.js (có test); file này chỉ phát lại từng nhịp và vẽ.
 // Vị trí cuối của pallet = khối pallet trong khung, vẽ theo slotWorldPosition, như hiệu ứng bay cũ.
 //
-// Trước chuyến đầu, robot quét kho một lần (exploreAll, ~0,5 s với phòng 20 × 12 m) để có bản đồ; kết quả giữ lại
-// theo phòng + phiên bản, lần phát sau dùng lại.
+// Bản đồ của robot lấy THẲNG từ bản vẽ (mapFromLayout, cách KION dựng bản sao số từ file thiết kế), không đi quét.
+// Vật lạ (bảng Robot) không có trong bản vẽ: robot chỉ biết khi cảm biến thấy.
 
 const TICKS_PER_SECOND = 40;   // 1 nhịp = 0,1 m → ×1 là 4 m/s (nhanh hơn robot thật cho demo đỡ chờ)
 const LOW_SLOWDOWN = 0.4;      // đang bước qua vật thấp thì chậm lại
@@ -36,7 +37,7 @@ export function createRobotDelivery(content, logEl) {
       const world = createWorld(layout);
       const door = findStart(world, ROBOT_RADIUS);
       if (!door) throw new Error('Phòng không còn chỗ trống để đặt robot.');
-      scanCache.set(key, { world, door, map: exploreAll(world, door, { robotRadius: ROBOT_RADIUS }).map });
+      scanCache.set(key, { world, door, map: mapFromLayout(world) });
     }
     return scanCache.get(key);
   }

@@ -41,7 +41,24 @@ export function updateCostmap(cm, map, changedCells) {
 export function rebuildCostmap(cm, map) {
   cm.blocked.fill(0);
   cm.low.fill(0);
+  blockRoomEdge(cm, map);
   for (let i = 0; i < map.state.length; i++) if (map.state[i] === OCCUPIED) stamp(cm, map, i);
+}
+
+/**
+ * Mép phòng là tường bao: tâm robot không được cách mép < bán kính. Bản đồ không vẽ tường bao thành ô vật
+ * (tia chạm mép không đánh dấu ô nào, xem gridMap.js), nên phải chặn riêng ở đây; thiếu dòng này robot đứng
+ * được ở y = 0,05 m, thân cắm vào tường, và một kệ bị bịt hai mặt vẫn bị coi là tới được qua khe sát tường.
+ */
+function blockRoomEdge(cm, map) {
+  const cs = map.cellSize;
+  for (let r = 0; r < map.rows; r++) {
+    for (let c = 0; c < map.cols; c++) {
+      const x = (c + 0.5) * cs;
+      const y = (r + 0.5) * cs;
+      if (Math.min(x, y, map.width - x, map.depth - y) < cm.robotRadius - 1e-9) cm.blocked[r * map.cols + c] = 1;
+    }
+  }
 }
 
 export function setMaxStep(cm, map, maxStep) {

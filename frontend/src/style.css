@@ -404,3 +404,24 @@ button.primary:disabled { opacity: 0.45; cursor: not-allowed; }   /* bị khoá 
 .robot-panel-list .warn { color: var(--error); }
 .robot-panel-list button { padding: 0 6px; margin-left: 4px; }
 .placing-obstacle canvas { cursor: crosshair; }
+
+/* Tab Robot: nút chọn chế độ + hai khung (Kiểm chứng thiết kế / Số hoá kho cũ). */
+.robot-modes { display: flex; gap: 4px; }
+.robot-modes button[aria-pressed='true'] { background: var(--accent); color: #fff; border-color: var(--accent); }
+.robot-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.robot-pane[hidden] { display: none; }
+.robot-toolbar .hint { color: var(--muted); }
+.robot-result .ok { color: var(--ok); }
+.robot-result .warn { color: var(--error); }
+.robot-result ul { margin: 0; padding-left: 18px; }
+
+/* Số hoá kho cũ: cảnh 3D bên trái, bản đồ robot bên phải. */
+.robot-split { flex: 1; min-height: 260px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.robot-file { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.robot-file input { max-width: 200px; }
+.robot-sep { width: 1px; height: 20px; background: var(--border); }
+.robot-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 6px; }
+.robot-table th, .robot-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.robot-table th { color: var(--muted); font-weight: 500; }
+.robot-table .ok { color: var(--ok); }
+.robot-table .warn { color: var(--error); }

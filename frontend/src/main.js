@@ -2,7 +2,7 @@ import { api } from './api/client.js';
 import { createEditor2d } from './editor2d/editor2d.js';
 import { createWarehouse3d } from './scene3d/warehouse3d.js';
 import { createReceive } from './ui/receive.js';
-import { createRobotScan } from './ui/robotScan.js';
+import { createRobotView } from './ui/robotView.js';
 import { createStockPanel } from './ui/stockPanel.js';
 import { closeRoom, getState, goToStep, setState, subscribe, syncWithAddress } from './state/store.js';
 import { createRoomList } from './ui/roomList.js';
@@ -101,7 +101,7 @@ function render(state) {
 
   // Robot quét chạy trên phòng ĐÃ LƯU (goToStep chặn khi bản nháp chưa lưu); rời màn thì dừng vòng vẽ.
   if (state.step === 'robot' && state.layout) {
-    robotScan ??= createRobotScan(document.getElementById('robot-root'));
+    robotScan ??= createRobotView(document.getElementById('robot-root'));
     robotScan.show(state.layout);
   } else {
     robotScan?.hide();

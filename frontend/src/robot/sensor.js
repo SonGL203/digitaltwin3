@@ -34,7 +34,10 @@ export function scan(world, pose, options = {}) {
   for (let i = 0; i < rays; i++) {
     // Góc chia đều, tính từ chỉ số (i / rays) chứ không cộng dồn từng bước để khỏi trôi sai số.
     const angle = (i / rays) * 2 * Math.PI;
-    readings.push(castRay(world, pose, angle, range, seeThroughBelow));
+    // Thế giới tự biết bắn tia (bản đồ độ cao của kho 3D, heightField.js) thì dùng cách của nó; không thì phép thử hộp.
+    readings.push(world.castRay
+      ? world.castRay(pose, angle, range, seeThroughBelow)
+      : castRay(world, pose, angle, range, seeThroughBelow));
   }
   return { origin: { x: pose.x, y: pose.y }, range, readings };
 }

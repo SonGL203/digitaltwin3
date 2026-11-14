@@ -65,6 +65,8 @@ describe('deliver', () => {
   it('không bao giờ chạm kệ, cột, tường', () => {
     const { frames } = runAll(world, [job('K3', 4), job('K7', 1)]);
     for (const f of frames) {
+      const { x, y } = f.pose;
+      expect(Math.min(x, y, world.width - x, world.depth - y), 'chạm tường bao').toBeGreaterThanOrEqual(0.3 - 1e-9);
       for (const b of world.boxes) {
         const dx = Math.max(b.x - f.pose.x, 0, f.pose.x - (b.x + b.width));
         const dy = Math.max(b.y - f.pose.y, 0, f.pose.y - (b.y + b.depth));

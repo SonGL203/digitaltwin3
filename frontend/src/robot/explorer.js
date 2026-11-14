@@ -111,7 +111,7 @@ export function* explore(world, start, options = {}) {
  */
 export function findStart(world, robotRadius = DEFAULT_EXPLORE.robotRadius) {
   const need = robotRadius + 0.1;
-  const clear = (x, y) => x >= need && y >= need && x <= world.width - need && y <= world.depth - need
+  const clear = world.isClear ? (x, y) => world.isClear(x, y, need) : (x, y) => x >= need && y >= need && x <= world.width - need && y <= world.depth - need
     && world.boxes.every((b) => {
       const dx = Math.max(b.x - x, 0, x - (b.x + b.width));
       const dy = Math.max(b.y - y, 0, y - (b.y + b.depth));
@@ -149,7 +149,10 @@ export function floorCells(world, map) {
   for (let i = 0; i < map.state.length; i++) {
     const { x, y } = cellCenter(map, i);
     if (x > world.width || y > world.depth) continue;
-    if (!world.boxes.some((b) => x > b.x && x < b.x + b.width && y > b.y && y < b.y + b.depth)) cells.push(i);
+    const floor = world.isFloor
+      ? world.isFloor(x, y)   // thế giới bản đồ độ cao (kho 3D)
+      : !world.boxes.some((b) => x > b.x && x < b.x + b.width && y > b.y && y < b.y + b.depth);
+    if (floor) cells.push(i);
   }
   return cells;
 }
