@@ -2,6 +2,7 @@ import { api } from './api/client.js';
 import { createEditor2d } from './editor2d/editor2d.js';
 import { createWarehouse3d } from './scene3d/warehouse3d.js';
 import { createReceive } from './ui/receive.js';
+import { createRobotScan } from './ui/robotScan.js';
 import { createStockPanel } from './ui/stockPanel.js';
 import { closeRoom, getState, goToStep, setState, subscribe, syncWithAddress } from './state/store.js';
 import { createRoomList } from './ui/roomList.js';
@@ -15,6 +16,7 @@ import { formatMeters } from './ui/format.js';
 const views = {
   layout: document.getElementById('view-layout'),
   warehouse: document.getElementById('view-warehouse'),
+  robot: document.getElementById('view-robot'),
   receive: document.getElementById('view-receive'),
 };
 const workspace = document.getElementById('workspace');
@@ -46,6 +48,7 @@ document.getElementById('back-to-rooms').addEventListener('click', () => closeRo
 
 // Cảnh 3D chỉ tạo khi mở bước 2 lần đầu: tạo lúc khung đang ẩn thì kích thước bằng 0.
 let scene3d = null;
+let robotScan = null;   // màn Robot quét: cũng tạo lần đầu mở, cùng lý do
 let drawn = { layout: undefined, slots: undefined };   // dữ liệu đã đưa cho cảnh 3D, để không dựng lại khi chưa đổi gì
 
 // Hai tính năng ở thanh trên: "Kho hàng" (danh sách kho → mở kho → Mặt bằng / Kho 3D) và "Nhập lô hàng" (lập lô
@@ -79,7 +82,7 @@ function render(state) {
   roomListEl.hidden = inRoom;
   roomEditorEl.hidden = !inRoom;
   // Màn danh sách phòng và màn Nhập lô hàng không cần bảng bên: ẩn đi cho rộng chỗ.
-  workspace.classList.toggle('no-sidebar', state.step === 'receive' || (state.step === 'layout' && !inRoom));
+  workspace.classList.toggle('no-sidebar', state.step === 'receive' || state.step === 'robot' || (state.step === 'layout' && !inRoom));
   roomTitle.textContent = state.layout?.name ?? '';
 
   if (state.step === 'warehouse') {
@@ -94,6 +97,14 @@ function render(state) {
       setState({ pendingPlacements: null });
       scene3d.play(placements);
     }
+  }
+
+  // Robot quét chạy trên phòng ĐÃ LƯU (goToStep chặn khi bản nháp chưa lưu); rời màn thì dừng vòng vẽ.
+  if (state.step === 'robot' && state.layout) {
+    robotScan ??= createRobotScan(document.getElementById('robot-root'));
+    robotScan.show(state.layout);
+  } else {
+    robotScan?.hide();
   }
 
   statusMessage.textContent = state.message?.text ?? '';

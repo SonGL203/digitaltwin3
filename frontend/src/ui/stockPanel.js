@@ -38,7 +38,7 @@ export function createStockPanel(root) {
         <p>${filled} / ${state.slots.length} khung đã có hàng.</p>
         <div class="receive-actions">
           <button type="button" class="primary" data-action="receive">Nhập lô hàng</button>
-          <button type="button" data-action="replay" ${state.lastPlacements ? '' : 'disabled'}>Phát lại hiệu ứng bay</button>
+          <button type="button" data-action="replay" ${state.lastPlacements ? '' : 'disabled'}>Phát lại robot chở hàng</button>
         </div>
         <div class="receive-footer">
           <button type="button" class="danger" data-action="reset" ${busy || filled === 0 ? 'disabled' : ''}>Đặt lại kho (lấy mọi pallet ra khỏi khung)</button>

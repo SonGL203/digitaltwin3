@@ -27,6 +27,7 @@
           <nav class="steps room-tabs" id="steps" aria-label="Xem kho">
             <button type="button" data-step="layout">Mặt bằng</button>
             <button type="button" data-step="warehouse">Kho 3D</button>
+            <button type="button" data-step="robot">Robot quét</button>
           </nav>
         </div>
         <section class="view" id="view-layout">
@@ -39,6 +40,9 @@
         <section class="view" id="view-warehouse" hidden>
           <div class="canvas-wrap" id="viewport3d"></div>
           <aside class="receive-dock receive" id="stock-root" aria-label="Kho đang mở"></aside>
+        </section>
+        <section class="view" id="view-robot" hidden>
+          <div class="robot-view" id="robot-root"></div>
         </section>
         <section class="view" id="view-receive" hidden>
           <div class="receive receive-page" id="receive-root"></div>

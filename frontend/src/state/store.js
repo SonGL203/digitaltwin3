@@ -9,7 +9,7 @@ import { askConfirm } from '../ui/confirm.js';
 // Đối tượng mới vẽ chưa có Id của server nên mang Id TẠM ÂM (-1, -2…); lúc lưu gửi id = null.
 
 const state = {
-  step: 'layout',          // 'layout' | 'warehouse' (kho 3D của kho đang mở) | 'receive' (nhập lô, không cần mở kho)
+  step: 'layout',          // 'layout' | 'warehouse' (kho 3D của kho đang mở) | 'robot' (robot giả lập quét kho đang mở) | 'receive' (nhập lô, không cần mở kho)
 
   rooms: [],               // danh sách phòng (tóm tắt) cho màn chọn phòng
   roomsLoaded: false,
@@ -20,8 +20,8 @@ const state = {
   loading: false,
   dirty: false,            // bản nháp có thay đổi chưa lưu
   saving: false,
-  lastPlacements: null,    // kết quả xếp gần nhất của phòng đang mở: nút "Phát lại" ở cảnh 3D dùng để xem lại pallet bay
-  pendingPlacements: null, // danh sách pallet cần cho bay vào khung khi sang cảnh 3D (do màn Nhập hàng đặt, cảnh 3D lấy rồi xoá)
+  lastPlacements: null,    // kết quả xếp gần nhất của phòng đang mở: nút "Phát lại" ở cảnh 3D cho robot chở lại
+  pendingPlacements: null, // pallet cần robot chở vào khung khi sang cảnh 3D (do màn Nhập hàng đặt, cảnh 3D lấy rồi xoá)
   slots: [],               // khung của phòng đang mở (kèm pallet/type/màu), cho cảnh 3D
   draftIssue: null,        // lỗi đầu tiên khi kiểm tra cả bản nháp ("K3: Kệ đè cột…"), null = ổn
   selectedRackId: null,
@@ -65,7 +65,8 @@ export function setState(patch) {
  * nên kệ mới vẽ sẽ không có khung. Về bước Mặt bằng thì luôn được.
  */
 export function goToStep(step, { reload = true } = {}) {
-  if (step === 'warehouse' && state.currentRoomId == null) step = 'layout';   // Kho 3D luôn là của một kho đang mở
+  // Kho 3D và Robot quét luôn là của một kho đang mở.
+  if ((step === 'warehouse' || step === 'robot') && state.currentRoomId == null) step = 'layout';
   if (step !== 'layout' && state.dirty) {
     showMessage('Bản nháp chưa lưu: bấm Lưu nháp trước khi sang bước này.', 'error');
     return;

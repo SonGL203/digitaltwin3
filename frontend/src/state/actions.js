@@ -1,6 +1,6 @@
-import { api } from '../api/client.js';
+import { api, ApiError } from '../api/client.js';
 import { askConfirm } from '../ui/confirm.js';
-import { clearStoredDraft, getState, loadLayout, setState, showMessage, storeDraft } from './store.js';
+import { clearStoredDraft, getState, goToStep, loadLayout, openRoom, setState, showMessage, storeDraft } from './store.js';
 
 // Các hành động của người dùng. Mọi thao tác vẽ chỉ sửa BẢN NHÁP trong bộ nhớ (state.layout); không có lời gọi
 // server nào cho tới khi bấm "Lưu nháp". Không có luật nghiệp vụ ở đây: đặt được hay không, chiếm chỗ bao nhiêu,
@@ -256,6 +256,45 @@ export async function saveDraft() {
     setState({ saving: false });
     showMessage(err.message, 'error');
   }
+}
+
+// ---------- tạo kho từ bản quét của robot ----------
+
+/**
+ * Tạo kho MỚI (POST /rooms, cùng kích thước và thông số với kho được quét), mở nó, rồi nạp kệ/cột/tường robot nhận ra
+ * vào BẢN NHÁP (Id tạm âm, chưa lưu). Người dùng kiểm tra số tầng kệ (robot chỉ đoán) rồi bấm Lưu nháp: server
+ * kiểm tra luật đặt kệ như mọi bản nháp khác. Không sửa kho cũ.
+ * Tên kho mới: "<tên cũ> - quét", trùng thì thêm số (server trả 409 khi trùng tên).
+ */
+export async function createRoomFromScan(scanned, source) {
+  const base = `${source.name} - quét`.slice(0, 45);
+  let id = null;
+  for (let n = 1; n <= 20 && id == null; n++) {
+    const name = n === 1 ? base : `${base} ${n}`;
+    try {
+      ({ id } = await api.createRoom({
+        name, width: scanned.width, depth: scanned.depth,
+        gridSize: source.gridSize, minGap: source.minGap, margin: source.margin,
+      }));
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 409)) throw err;
+    }
+  }
+  if (id == null) throw new Error('Không đặt được tên cho kho mới: các tên "… - quét" đều đã có.');
+
+  await openRoom(id);
+  if (getState().currentRoomId !== id || !getState().layout) return;
+  edit((layout) => {
+    layout.obstacles = scanned.obstacles.map((o) => ({ id: newTempId(), kind: o.kind, x: o.x, y: o.y, width: o.width, depth: o.depth }));
+    layout.racks = scanned.racks.map((r) => ({
+      id: newTempId(), code: r.code, x: r.x, y: r.y, rotation: r.rotation,
+      levels: r.levels, levelHeight: r.levelHeight, bays: r.bays, bayWidth: r.bayWidth, depth: r.depth,
+      hasTop: r.hasTop, maxWeight: r.maxWeight, productTypeId: null,
+      footprintWidth: r.footprintWidth, footprintDepth: r.footprintDepth, slotCount: null,
+    }));
+  });
+  goToStep('layout');
+  showMessage(`Bản nháp từ robot: ${scanned.racks.length} kệ, ${scanned.obstacles.length} tường/cột. Số tầng, số ô của kệ là đoán: kiểm tra rồi bấm Lưu nháp.`);
 }
 
 /** Bỏ mọi thay đổi chưa lưu, lấy lại phòng như đã lưu trên server. */

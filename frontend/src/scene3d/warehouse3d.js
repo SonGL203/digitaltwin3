@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { bayFootprint, rackPoint } from './rackGeometry.js';
 import { slotWorldPosition } from './slotPosition.js';
+import { createRobotDelivery } from './robotDelivery.js';
+import { createRobotPanel } from './robotPanel.js';
 
 // Cảnh 3D của một phòng: sàn, tường, cột, kệ và các khung (tô màu theo type pallet đang nằm trong khung).
 // Chỉ vẽ dữ liệu server trả về (phòng đã lưu + danh sách khung); không tự chọn khung, không tự kiểm tra luật.
@@ -37,18 +39,26 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
   overlay.className = 'view3d-overlay';
   container.appendChild(overlay);
 
-  // Nút tốc độ hiệu ứng pallet bay (góc dưới trái).
+  // Nút tốc độ robot chở hàng (góc dưới trái).
   const speedBar = document.createElement('div');
   speedBar.className = 'view3d-speed';
   speedBar.innerHTML = `
-    <span>Tốc độ bay</span>
+    <span>Tốc độ robot</span>
     <button type="button" data-speed="1">×1</button>
     <button type="button" data-speed="2">×2</button>
     <button type="button" data-speed="4">×4</button>
+    <button type="button" data-speed="8">×8</button>
     <button type="button" data-skip>Bỏ qua</button>
-    <button type="button" data-replay title="Cho pallet của lần xếp gần nhất bay vào lại">Phát lại</button>
+    <button type="button" data-replay title="Cho robot chở lại các pallet của lần xếp gần nhất">Phát lại</button>
   `;
   container.appendChild(speedBar);
+
+  // Nhật ký robot (góc dưới phải): đang chở gì, các quyết định bước qua / đi vòng kèm số.
+  const robotLog = document.createElement('div');
+  robotLog.className = 'view3d-robot-log';
+  robotLog.hidden = true;
+  container.appendChild(robotLog);
+  const delivery = createRobotDelivery(content, robotLog);
 
   let pickables = [];       // { mesh, slot, rack }
   let flights = [];         // pallet đang bay: { flyer, target, from, to, delay, elapsed }
@@ -58,9 +68,17 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
   let shownKey = null;      // phòng + kích thước đang hiện: đổi thì mới đưa camera về giữa phòng
   let current = { layout: null, slots: [] };
 
+  // Bảng Robot đọc `current` ngay khi tạo, nên phải tạo SAU dòng trên (tạo sớm hơn thì JS báo lỗi truy cập trước khi khai báo).
+  const robotPanel = createRobotPanel({
+    container, scene, delivery,
+    getLayout: () => current.layout,
+    onDemo: () => demo(),
+  });
+
   // ---------- dựng ----------
 
   function clearContent() {
+    delivery.stop();   // robot và pallet đang chở thuộc cảnh cũ
     content.traverse((o) => {
       o.geometry?.dispose();
       if (o.material) [o.material].flat().forEach((m) => m.dispose());
@@ -226,6 +244,7 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
     buildRoom(layout);
     layout.racks.forEach(buildRack);
     const missing = buildSlots(layout, slots);
+    robotPanel.refresh();
 
     const key = `${layout.id}:${layout.width}x${layout.depth}`;
     if (key !== shownKey) {
@@ -281,6 +300,7 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
       -((e.clientY - rect.top) / rect.height) * 2 + 1,
     );
     raycaster.setFromCamera(pointer, camera);
+    if (robotPanel.handleClick(raycaster)) return;   // đang thả vật cản lạ: cú bấm này là chọn chỗ trên sàn
     // Bắt cả khung lẫn khối pallet: pallet trên nóc cao hơn tấm nóc nên phải bấm được vào chính pallet.
     const targets = pickables.flatMap((p) => (p.pallet ? [p.mesh, p.pallet] : [p.mesh]));
     const hit = raycaster.intersectObjects(targets, false)[0];
@@ -315,9 +335,22 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
    */
   function play(placements) {
     finishFlights();
+    delivery.finish();
     const { layout } = current;
     if (!layout) return;
     const bySlotCode = new Map(pickables.map((p) => [p.slot.code, p]));
+
+    // Robot chở hàng (src/robot/delivery.js): cùng thứ tự server, cùng vị trí cuối. Không dựng được thế giới cho
+    // robot (dữ liệu thiếu footprint…) thì dùng hiệu ứng bay cũ bên dưới.
+    const targets = placements
+      .map((p) => ({ target: bySlotCode.get(p.slotCode), palletCode: p.palletCode, slotCode: p.slotCode }))
+      .filter((t) => t.target?.pallet);
+    try {
+      delivery.start(layout, targets, robotPanel.settings());
+      return;
+    } catch (err) {
+      console.warn('Robot không chạy được, dùng hiệu ứng bay:', err);
+    }
     const from = new THREE.Vector3(-2, 0.8, layout.depth / 2);   // cửa kho phía bên trái
 
     placements.forEach((placement, i) => {
@@ -337,6 +370,20 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
       content.add(flight.flyer);
       flights.push(flight);
     });
+  }
+
+  /**
+   * Chở thử: robot chở lại 3 pallet ĐANG nằm trong kho (khung đầu, giữa, cuối theo thứ tự khung), để xem robot
+   * xử lý vật cản lạ mà không phải nhập lô mới. Vị trí vẫn là do server chọn từ trước; không ghi gì vào database.
+   */
+  function demo() {
+    const occupied = pickables.filter((p) => p.pallet);
+    if (occupied.length === 0) {
+      robotPanel.say('Kho chưa có pallet nào: nhập lô hàng trước.');
+      return;
+    }
+    const picks = [...new Set([0, Math.floor(occupied.length / 2), occupied.length - 1])].map((i) => occupied[i]);
+    play(picks.map((p) => ({ slotCode: p.slot.code, palletCode: p.slot.palletCode })));
   }
 
   function landed(flight) {
@@ -376,7 +423,10 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
   speedBar.addEventListener('click', (e) => {
     const button = e.target.closest('button');
     if (!button) return;
-    if ('skip' in button.dataset) finishFlights();
+    if ('skip' in button.dataset) {
+      finishFlights();
+      delivery.finish();
+    }
     if ('replay' in button.dataset) {
       const placements = getReplay();
       if (placements?.length) play(placements);
@@ -388,7 +438,9 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
   speedBar.querySelector('[data-speed="1"]').setAttribute('aria-pressed', 'true');
 
   renderer.setAnimationLoop(() => {
-    stepFlights(clock.getDelta() * speed);
+    const seconds = Math.min(0.1, clock.getDelta()) * speed;   // tab ẩn lâu rồi quay lại: không nhảy cóc cả chục giây
+    stepFlights(seconds);
+    delivery.step(seconds);
     controls.update();
     renderer.render(scene, camera);
   });
