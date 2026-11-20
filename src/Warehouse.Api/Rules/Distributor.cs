@@ -2,7 +2,8 @@ namespace Warehouse.Api.Rules;
 
 using Warehouse.Api.Models;
 
-public sealed record RoomSlots(int RoomId, string Name, IReadOnlyList<SlotCandidate> Candidates, double Margin);
+public sealed record RoomSlots(int RoomId, string Name, IReadOnlyList<SlotCandidate> Candidates, double Margin,
+    IReadOnlyDictionary<Slot, StockKey>? Stock = null);
 
 public sealed record RoomShare(int RoomId, string Name, IReadOnlyList<Placement> Placements);
 
@@ -18,21 +19,25 @@ public static class Distributor
         ArgumentNullException.ThrowIfNull(pallets);
         ArgumentNullException.ThrowIfNull(rooms);
 
-        var taken = rooms.ToDictionary(r => r.RoomId, _ => new Dictionary<Slot, string>());
+        // taken: khung đang có hàng (hàng trong kho + khung đã giữ cho lô này), kèm loại hàng.
+        var taken = rooms.ToDictionary(r => r.RoomId,
+            r => r.Stock is null ? new Dictionary<Slot, StockKey>() : new Dictionary<Slot, StockKey>(r.Stock));
         var placed = rooms.ToDictionary(r => r.RoomId, _ => new List<Placement>());
         var remaining = pallets.ToList();
 
-        HashSet<string> TypesIn(RoomSlots room) => room.Candidates
-            .Where(c => !c.Slot.IsTop && c.Slot.AssignedSize is not null)
-            .Select(c => c.Slot.AssignedSize!)
-            .Concat(taken[room.RoomId].Where(t => !t.Key.IsTop).Select(t => t.Value))
+        HashSet<string> GroupsIn(RoomSlots room) => room.Candidates
+            .Where(c => !c.Slot.IsTop)
+            .Select(c => taken[room.RoomId].TryGetValue(c.Slot, out var k) ? k
+                       : c.Slot.AssignedSize is string s ? new StockKey(null, s) : (StockKey?)null)
+            .OfType<StockKey>()
+            .Select(k => k.RackGroup)
             .ToHashSet();
 
         void Apply(RoomSlots room, AllocationResult result)
         {
             foreach (var p in result.Placements)
             {
-                taken[room.RoomId][p.Target.Slot] = p.Pallet.Size.Code;
+                taken[room.RoomId][p.Target.Slot] = StockKey.Of(p.Pallet);
                 placed[room.RoomId].Add(p);
             }
             var done = result.Placements.Select(p => p.Pallet).ToHashSet();
@@ -47,8 +52,8 @@ public static class Distributor
             var best = pending
                 .Select(r =>
                 {
-                    var types = TypesIn(r);
-                    return (Room: r, Match: remaining.Where(p => types.Contains(p.Size.Code)).ToList());
+                    var groups = GroupsIn(r);
+                    return (Room: r, Match: remaining.Where(p => groups.Contains(StockKey.Of(p).RackGroup)).ToList());
                 })
                 .Where(x => x.Match.Count > 0)
                 .OrderByDescending(x => x.Match.Count)

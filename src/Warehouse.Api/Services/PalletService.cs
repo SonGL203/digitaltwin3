@@ -68,7 +68,7 @@ public class PalletService(IWarehouseStore store) : IPalletService
         var rooms = AllRooms();
         var roomChecks = rooms.Select(room =>
         {
-            var allocation = Allocator.Allocate(all, room.Candidates, room.Margin);
+            var allocation = Allocator.Allocate(all, room.Candidates, room.Margin, room.Stock);
             var placeable = allocation.Placements.GroupBy(p => lineOf[p.Pallet]).ToDictionary(g => g.Key, g => g.Count());
             var notes = new List<string>();
             for (var i = 0; i < resolved.Count; i++)
@@ -155,7 +155,8 @@ public class PalletService(IWarehouseStore store) : IPalletService
             var placedIds = store.GetAllSlots().Where(s => s.PalletId is not null).Select(s => s.PalletId!.Value).ToHashSet();
             var unplaced = batch.Pallets.Where(p => !placedIds.Contains(p.Id)).OrderBy(p => p.Id).ToList();
 
-            var allocation = Allocator.Allocate(unplaced, PlacementOrder(room), room.Margin);
+            var candidates = PlacementOrder(room);
+            var allocation = Allocator.Allocate(unplaced, candidates, room.Margin, StockOf(candidates));
 
             foreach (var placement in allocation.Placements)
                 placement.Target.Slot.Place(placement.Pallet);
@@ -199,7 +200,21 @@ public class PalletService(IWarehouseStore store) : IPalletService
     }
 
     private List<RoomSlots> AllRooms()
-        => store.GetRooms().Select(r => new RoomSlots(r.Id, r.Name, PlacementOrder(r), r.Margin)).ToList();
+        => store.GetRooms().Select(r =>
+        {
+            var order = PlacementOrder(r);
+            return new RoomSlots(r.Id, r.Name, order, r.Margin, StockOf(order));
+        }).ToList();
+
+    // Hàng đang nằm trong khung → (loại hàng, cỡ). Một lần GetPallets, không N+1.
+    private Dictionary<Slot, StockKey> StockOf(IReadOnlyList<SlotCandidate> candidates)
+    {
+        var ids = candidates.Select(c => c.Slot.PalletId).OfType<int>().ToList();
+        var pallets = store.GetPallets(ids).ToDictionary(p => p.Id);
+        return candidates
+            .Where(c => c.Slot.PalletId is int id && pallets.ContainsKey(id))
+            .ToDictionary(c => c.Slot, c => StockKey.Of(pallets[c.Slot.PalletId!.Value]));
+    }
 
     private static DistributionViewModel ToViewModel(int? batchId, int total, DistributionResult result, bool withPlacements)
         => new(
@@ -224,15 +239,18 @@ public class PalletService(IWarehouseStore store) : IPalletService
         var candidates = CandidatesOf(room);
         var palletIds = candidates.Select(c => c.Slot.PalletId).OfType<int>().ToList();
         var pallets = store.GetPallets(palletIds).ToDictionary(p => p.Id);
+        var productNames = store.GetProductTypes().ToDictionary(t => t.Id, t => t.Name);
 
         var slots = candidates.Select(c =>
         {
             var pallet = c.Slot.PalletId is int id ? pallets.GetValueOrDefault(id) : null;
             (double AlongBay, double AcrossDepth)? footprint = pallet is null ? null : Slot.PalletFootprint(c.Rack, pallet.Size);
+            var productId = pallet?.ProductTypeId;
             return new SlotViewModel(
                 c.Slot.Id, c.Rack.Id, c.Rack.Code, c.Slot.Code, c.Slot.Level, c.Slot.Bay, c.Slot.IsTop,
                 c.Slot.PalletId, pallet?.Code, pallet?.Size.Code, pallet?.Size.Color,
-                footprint?.AlongBay, footprint?.AcrossDepth, pallet?.Size.Height);
+                footprint?.AlongBay, footprint?.AcrossDepth, pallet?.Size.Height,
+                productId, productId is int pid ? productNames.GetValueOrDefault(pid) : null);
         }).ToList();
 
         return ServiceResult<IReadOnlyList<SlotViewModel>>.Ok(slots);

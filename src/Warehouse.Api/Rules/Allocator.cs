@@ -26,32 +26,36 @@ public static class Allocator
     private const long MaxWork = 20_000_000;
 
     private sealed record Group(
-        string Code, IReadOnlyList<(Pallet Pallet, int Index)> Members, SlotSearchResult Search, double Volume, int FirstIndex);
+        StockKey Key, IReadOnlyList<(Pallet Pallet, int Index)> Members, SlotSearchResult Search, double Volume, int FirstIndex);
 
     private sealed record Simulation(List<Placement> Placements, List<Rejection> Full, Score Score);
 
-    private readonly record struct Mixing(int MixedLevels, int LevelPairs, int MixedTops, int TopPairs, int MixedRacks)
+    private readonly record struct Mixing(
+        int MixedProductRacks, int MixedLevels, int LevelPairs, int MixedTops, int TopPairs, int MixedRacks)
         : IComparable<Mixing>
     {
         public int CompareTo(Mixing other)
-            => (MixedLevels, LevelPairs, MixedTops, TopPairs, MixedRacks)
-                .CompareTo((other.MixedLevels, other.LevelPairs, other.MixedTops, other.TopPairs, other.MixedRacks));
+            => (MixedProductRacks, MixedLevels, LevelPairs, MixedTops, TopPairs, MixedRacks)
+                .CompareTo((other.MixedProductRacks, other.MixedLevels, other.LevelPairs,
+                            other.MixedTops, other.TopPairs, other.MixedRacks));
 
         public static Mixing Of(IEnumerable<KeyValuePair<(Rack Rack, int Level), List<Slot>>> groups,
-                                IReadOnlyDictionary<Slot, string> typeOfSlot)
+                                IReadOnlyDictionary<Slot, StockKey> keyOfSlot)
         {
             var rows = groups
                 .Select(kv => (kv.Key.Rack, IsTop: kv.Value[0].IsTop,
-                               Types: kv.Value.Where(typeOfSlot.ContainsKey).Select(s => typeOfSlot[s]).ToHashSet()))
+                               Keys: kv.Value.Where(keyOfSlot.ContainsKey).Select(s => keyOfSlot[s]).ToHashSet()))
                 .ToList();
             var levels = rows.Where(r => !r.IsTop).ToList();
             var tops = rows.Where(r => r.IsTop).ToList();
+            var byRack = levels.GroupBy(l => l.Rack).Select(g => g.SelectMany(l => l.Keys).ToList()).ToList();
             return new Mixing(
-                levels.Count(l => l.Types.Count > 1),
-                levels.Sum(l => l.Types.Count),
-                tops.Count(t => t.Types.Count > 1),
-                tops.Sum(t => t.Types.Count),
-                levels.GroupBy(l => l.Rack).Count(g => g.SelectMany(l => l.Types).Distinct().Count() > 1));
+                byRack.Count(keys => keys.Select(k => k.ProductTypeId).Distinct().Count() > 1),
+                levels.Count(l => l.Keys.Count > 1),
+                levels.Sum(l => l.Keys.Count),
+                tops.Count(t => t.Keys.Count > 1),
+                tops.Sum(t => t.Keys.Count),
+                byRack.Count(keys => keys.Distinct().Count() > 1));
         }
     }
 
@@ -64,26 +68,29 @@ public static class Allocator
         }
     }
 
+    // held: khung đang có hàng (hàng trong kho + khung đã giữ chỗ trong kế hoạch), kèm loại hàng.
+    // Không truyền thì đọc Slot.AssignedSize và coi là hàng chưa phân loại.
     public static AllocationResult Allocate(
         IReadOnlyList<Pallet> pallets, IReadOnlyList<SlotCandidate> candidates, double margin,
-        IReadOnlyDictionary<Slot, string>? reserved = null)
+        IReadOnlyDictionary<Slot, StockKey>? held = null)
     {
         ArgumentNullException.ThrowIfNull(pallets);
         ArgumentNullException.ThrowIfNull(candidates);
 
-        var existingTypes = candidates
-            .Select(c => reserved is not null && reserved.TryGetValue(c.Slot, out var t) ? t : c.Slot.AssignedSize)
-            .OfType<string>()
+        var existingGroups = candidates
+            .Select(c => HeldBy(c.Slot, held))
+            .OfType<StockKey>()
+            .Select(k => k.RackGroup)
             .ToHashSet();
 
         var groups = pallets
             .Select((pallet, index) => (Pallet: pallet, Index: index))
-            .GroupBy(x => (x.Pallet.Size.Code, x.Pallet.ProductTypeId))
+            .GroupBy(x => StockKey.Of(x.Pallet))
             .Select(g =>
             {
                 var members = g.ToList();
                 var search = SlotFinder.Find(candidates, members[0].Pallet, margin);
-                return new Group(g.Key.Code, members, search, Volume(members[0].Pallet), members[0].Index);
+                return new Group(g.Key, members, search, Volume(members[0].Pallet), members[0].Index);
             })
             .ToList();
 
@@ -98,9 +105,9 @@ public static class Allocator
         var fitting = groups.Where(g => g.Search.HasAnyFittingSlot).ToList();
 
         Simulation? best = null;
-        foreach (var order in OrdersToTry(fitting, existingTypes, pallets.Count, candidates.Count))
+        foreach (var order in OrdersToTry(fitting, existingGroups, pallets.Count, candidates.Count))
         {
-            var run = Simulate(order, candidates, reserved);
+            var run = Simulate(order, candidates, held);
             if (best is null || run.Score.CompareTo(best.Score) < 0)
                 best = run;
         }
@@ -115,16 +122,20 @@ public static class Allocator
             foreach (var (pallet, _) in group.Members)
                 fits[pallet] = slots;
         }
-        var (improved, full) = Improve(best.Placements, best.Full, candidates, reserved, fits);
+        var (improved, full) = Improve(best.Placements, best.Full, candidates, held, fits);
 
         return new AllocationResult(improved, rejected.Concat(full).ToList());
     }
+
+    private static StockKey? HeldBy(Slot slot, IReadOnlyDictionary<Slot, StockKey>? held)
+        => held is not null && held.TryGetValue(slot, out var key) ? key
+         : slot.AssignedSize is string size ? new StockKey(null, size) : null;
 
     private const int MaxImproveRounds = 10;
 
     private static (List<Placement> Plan, List<Rejection> Full) Improve(
         List<Placement> placements, List<Rejection> fullRejections, IReadOnlyList<SlotCandidate> candidates,
-        IReadOnlyDictionary<Slot, string>? reserved, IReadOnlyDictionary<Pallet, HashSet<Slot>> fits)
+        IReadOnlyDictionary<Slot, StockKey>? held, IReadOnlyDictionary<Pallet, HashSet<Slot>> fits)
     {
         var plan = placements.ToList();
         var full = fullRejections.ToList();
@@ -132,7 +143,7 @@ public static class Allocator
             || (long)plan.Count * (plan.Count + candidates.Count + full.Count) * candidates.Count > MaxWork)
             return (plan, full);
 
-        var typeOfSlot = new Dictionary<Slot, string>();
+        var keyOfSlot = new Dictionary<Slot, StockKey>();
         var rows = new Dictionary<(Rack, int), List<Slot>>();
         var slotOf = new Dictionary<Slot, SlotCandidate>();
         foreach (var c in candidates)
@@ -141,14 +152,13 @@ public static class Allocator
             if (!rows.TryGetValue((c.Rack, c.Slot.Level), out var row))
                 rows[(c.Rack, c.Slot.Level)] = row = new List<Slot>();
             row.Add(c.Slot);
-            var held = reserved is not null && reserved.TryGetValue(c.Slot, out var r) ? r : c.Slot.AssignedSize;
-            if (held is not null)
-                typeOfSlot[c.Slot] = held;
+            if (HeldBy(c.Slot, held) is StockKey stock)
+                keyOfSlot[c.Slot] = stock;
         }
         foreach (var p in plan)
-            typeOfSlot[p.Target.Slot] = p.Pallet.Size.Code;
+            keyOfSlot[p.Target.Slot] = StockKey.Of(p.Pallet);
 
-        var score = Mixing.Of(rows, typeOfSlot);
+        var score = Mixing.Of(rows, keyOfSlot);
         for (int round = 0; round < MaxImproveRounds; round++)
         {
             var changed = false;
@@ -158,15 +168,15 @@ public static class Allocator
                 for (int j = i + 1; j < plan.Count; j++)
                 {
                     var (a, b) = (plan[i], plan[j]);
-                    var (typeA, typeB) = (a.Pallet.Size.Code, b.Pallet.Size.Code);
-                    if (typeA == typeB
+                    var (keyA, keyB) = (StockKey.Of(a.Pallet), StockKey.Of(b.Pallet));
+                    if (keyA == keyB
                         || !fits[a.Pallet].Contains(b.Target.Slot)
                         || !fits[b.Pallet].Contains(a.Target.Slot))
                         continue;
 
-                    typeOfSlot[a.Target.Slot] = typeB;
-                    typeOfSlot[b.Target.Slot] = typeA;
-                    var trial = Mixing.Of(rows, typeOfSlot);
+                    keyOfSlot[a.Target.Slot] = keyB;
+                    keyOfSlot[b.Target.Slot] = keyA;
+                    var trial = Mixing.Of(rows, keyOfSlot);
                     if (trial.CompareTo(score) < 0)
                     {
                         score = trial;
@@ -176,8 +186,8 @@ public static class Allocator
                     }
                     else
                     {
-                        typeOfSlot[a.Target.Slot] = typeA;
-                        typeOfSlot[b.Target.Slot] = typeB;
+                        keyOfSlot[a.Target.Slot] = keyA;
+                        keyOfSlot[b.Target.Slot] = keyB;
                     }
                 }
             }
@@ -185,16 +195,16 @@ public static class Allocator
             for (int i = 0; i < plan.Count; i++)
             {
                 var a = plan[i];
-                var type = a.Pallet.Size.Code;
+                var key = StockKey.Of(a.Pallet);
                 foreach (var c in candidates)
                 {
                     var slot = c.Slot;
-                    if (slot.IsTop != a.Target.Slot.IsTop || typeOfSlot.ContainsKey(slot) || !fits[a.Pallet].Contains(slot))
+                    if (slot.IsTop != a.Target.Slot.IsTop || keyOfSlot.ContainsKey(slot) || !fits[a.Pallet].Contains(slot))
                         continue;
 
-                    typeOfSlot.Remove(a.Target.Slot);
-                    typeOfSlot[slot] = type;
-                    var trial = Mixing.Of(rows, typeOfSlot);
+                    keyOfSlot.Remove(a.Target.Slot);
+                    keyOfSlot[slot] = key;
+                    var trial = Mixing.Of(rows, keyOfSlot);
                     if (trial.CompareTo(score) < 0)
                     {
                         score = trial;
@@ -203,8 +213,8 @@ public static class Allocator
                     }
                     else
                     {
-                        typeOfSlot.Remove(slot);
-                        typeOfSlot[a.Target.Slot] = type;
+                        keyOfSlot.Remove(slot);
+                        keyOfSlot[a.Target.Slot] = key;
                     }
                 }
             }
@@ -214,12 +224,12 @@ public static class Allocator
                 for (int k = 0; k < full.Count; k++)
                 {
                     var (a, waiting) = (plan[i], full[k].Pallet);
-                    var (typeA, typeW) = (a.Pallet.Size.Code, waiting.Size.Code);
-                    if (typeA == typeW || !fits[waiting].Contains(a.Target.Slot))
+                    var (keyA, keyW) = (StockKey.Of(a.Pallet), StockKey.Of(waiting));
+                    if (keyA == keyW || !fits[waiting].Contains(a.Target.Slot))
                         continue;
 
-                    typeOfSlot[a.Target.Slot] = typeW;
-                    var trial = Mixing.Of(rows, typeOfSlot);
+                    keyOfSlot[a.Target.Slot] = keyW;
+                    var trial = Mixing.Of(rows, keyOfSlot);
                     if (trial.CompareTo(score) < 0)
                     {
                         score = trial;
@@ -229,7 +239,7 @@ public static class Allocator
                     }
                     else
                     {
-                        typeOfSlot[a.Target.Slot] = typeA;
+                        keyOfSlot[a.Target.Slot] = keyA;
                     }
                 }
             }
@@ -241,10 +251,10 @@ public static class Allocator
     }
 
     private static IEnumerable<IReadOnlyList<Group>> OrdersToTry(
-        List<Group> groups, HashSet<string> existingTypes, int palletCount, int slotCount)
+        List<Group> groups, HashSet<string> existingGroups, int palletCount, int slotCount)
     {
         var baseOrder = groups
-            .OrderBy(g => existingTypes.Contains(g.Code) ? 0 : 1)
+            .OrderBy(g => existingGroups.Contains(g.Key.RackGroup) ? 0 : 1)
             .ThenBy(g => g.Search.FreeSlots.Count)
             .ThenByDescending(g => g.Volume)
             .ThenBy(g => g.FirstIndex)
@@ -303,11 +313,11 @@ public static class Allocator
     }
 
     private static Simulation Simulate(
-        IReadOnlyList<Group> ordered, IReadOnlyList<SlotCandidate> candidates, IReadOnlyDictionary<Slot, string>? reserved)
+        IReadOnlyList<Group> ordered, IReadOnlyList<SlotCandidate> candidates, IReadOnlyDictionary<Slot, StockKey>? held)
     {
         var order = new Dictionary<Slot, int>();
-        var typesInRack = new Dictionary<Rack, HashSet<string>>();
-        var typeOfSlot = new Dictionary<Slot, string>();
+        var groupsInRack = new Dictionary<Rack, HashSet<string>>();
+        var keyOfSlot = new Dictionary<Slot, StockKey>();
         var slotsOfLevel = new Dictionary<(Rack, int), List<Slot>>();
         var used = new HashSet<Slot>();
 
@@ -315,24 +325,20 @@ public static class Allocator
         {
             var (rack, slot) = (candidates[i].Rack, candidates[i].Slot);
             order[slot] = i;
-            typesInRack.TryAdd(rack, new HashSet<string>());
+            groupsInRack.TryAdd(rack, new HashSet<string>());
 
             if (!slotsOfLevel.TryGetValue((rack, slot.Level), out var level))
                 slotsOfLevel[(rack, slot.Level)] = level = new List<Slot>();
             level.Add(slot);
 
-            var held = slot.AssignedSize;
-            if (reserved is not null && reserved.TryGetValue(slot, out var reservedType))
-            {
-                held = reservedType;
+            if (held is not null && held.ContainsKey(slot))
                 used.Add(slot);
-            }
 
-            if (held is not null)
+            if (HeldBy(slot, held) is StockKey stock)
             {
-                typeOfSlot[slot] = held;
+                keyOfSlot[slot] = stock;
                 if (!slot.IsTop)
-                    typesInRack[rack].Add(held);
+                    groupsInRack[rack].Add(stock.RackGroup);
             }
         }
 
@@ -345,7 +351,7 @@ public static class Allocator
             var rest = new List<Pallet>();
             foreach (var (pallet, _) in group.Members)
             {
-                var target = Pick(group.Search.FreeSlots, pallet.Size.Code, ownRackOnly: true);
+                var target = Pick(group.Search.FreeSlots, group.Key, ownRackOnly: true);
                 if (target is null)
                     rest.Add(pallet);
                 else
@@ -358,7 +364,7 @@ public static class Allocator
         {
             foreach (var pallet in rest)
             {
-                var target = Pick(free, pallet.Size.Code, ownRackOnly: false);
+                var target = Pick(free, StockKey.Of(pallet), ownRackOnly: false);
                 if (target is null)
                     full.Add(new Rejection(pallet, FullReason));
                 else
@@ -370,66 +376,82 @@ public static class Allocator
 
         void Place(Pallet pallet, SlotCandidate target)
         {
+            var key = StockKey.Of(pallet);
             used.Add(target.Slot);
-            typeOfSlot[target.Slot] = pallet.Size.Code;
+            keyOfSlot[target.Slot] = key;
             if (!target.Slot.IsTop)
-                typesInRack[target.Rack].Add(pallet.Size.Code);
+                groupsInRack[target.Rack].Add(key.RackGroup);
             placements.Add(new Placement(pallet, target));
         }
 
-        SlotCandidate? Pick(IReadOnlyList<SlotCandidate> free, string type, bool ownRackOnly)
+        SlotCandidate? Pick(IReadOnlyList<SlotCandidate> free, StockKey key, bool ownRackOnly)
         {
             SlotCandidate? best = null;
-            (bool IsTop, int Class, int Adjacent, int RackPref, int Order) bestKey = default;
+            (bool IsTop, int Class, int LevelFit, int Adjacent, int RackPref, int Order) bestKey = default;
 
             foreach (var c in free)
             {
                 if (used.Contains(c.Slot))
                     continue;
 
-                var cls = Class(c, type);
+                var cls = Class(c, key);
                 if (ownRackOnly && (cls != 0 || c.Slot.IsTop))
                     continue;
 
-                var key = (c.Slot.IsTop, cls, Adjacent(c, type) ? 0 : 1, RackPref(c.Rack, type), order[c.Slot]);
-                if (best is null || key.CompareTo(bestKey) < 0)
+                var rank = (c.Slot.IsTop, cls, cls == 0 ? LevelFit(c, key) : 0,
+                            Adjacent(c, key) ? 0 : 1, RackPref(c.Rack, key), order[c.Slot]);
+                if (best is null || rank.CompareTo(bestKey) < 0)
                 {
                     best = c;
-                    bestKey = key;
+                    bestKey = rank;
                 }
             }
             return best;
         }
 
-        int Class(SlotCandidate c, string type)
+        HashSet<StockKey> KeysOnLevel(SlotCandidate c)
+            => slotsOfLevel[(c.Rack, c.Slot.Level)]
+                .Where(keyOfSlot.ContainsKey).Select(s => keyOfSlot[s]).ToHashSet();
+
+        // 0 kệ của đúng loại hàng này, 1 kệ trống, 2–5 kệ đã có loại khác (xét theo tầng).
+        int Class(SlotCandidate c, StockKey key)
         {
-            var here = typesInRack[c.Rack];
+            var here = groupsInRack[c.Rack];
             if (here.Count == 0)
                 return 1;
-            if (here.Count == 1 && here.Contains(type))
+            if (here.Count == 1 && here.Contains(key.RackGroup))
                 return 0;
 
-            var onLevel = slotsOfLevel[(c.Rack, c.Slot.Level)]
-                .Where(typeOfSlot.ContainsKey).Select(s => typeOfSlot[s]).ToHashSet();
+            var onLevel = KeysOnLevel(c);
             if (onLevel.Count == 0)
                 return 4;
-            if (!onLevel.Contains(type))
+            if (!onLevel.Contains(key))
                 return 5;
             return onLevel.Count == 1 ? 2 : 3;
         }
 
-        bool Adjacent(SlotCandidate c, string type)
-            => slotsOfLevel[(c.Rack, c.Slot.Level)]
-                .Any(s => Math.Abs(s.Bay - c.Slot.Bay) == 1 && typeOfSlot.TryGetValue(s, out var t) && t == type);
-
-        int RackPref(Rack rack, string type)
+        // Trong kệ của chính loại hàng: tầng trống hoặc tầng cùng cỡ trước,
+        // rồi tầng đã lẫn có cỡ này, cuối cùng tầng của cỡ khác (cùng loại hàng).
+        int LevelFit(SlotCandidate c, StockKey key)
         {
-            var here = typesInRack[rack];
-            return here.Contains(type) ? 0 : here.Count >= 2 ? 1 : 2;
+            var onLevel = KeysOnLevel(c);
+            if (onLevel.Count == 0 || (onLevel.Count == 1 && onLevel.Contains(key)))
+                return 0;
+            return onLevel.Contains(key) ? 1 : 2;
+        }
+
+        bool Adjacent(SlotCandidate c, StockKey key)
+            => slotsOfLevel[(c.Rack, c.Slot.Level)]
+                .Any(s => Math.Abs(s.Bay - c.Slot.Bay) == 1 && keyOfSlot.TryGetValue(s, out var t) && t == key);
+
+        int RackPref(Rack rack, StockKey key)
+        {
+            var here = groupsInRack[rack];
+            return here.Contains(key.RackGroup) ? 0 : here.Count >= 2 ? 1 : 2;
         }
 
         Score Evaluate()
-            => new(full.Count, placements.Count(p => p.IsTop), Mixing.Of(slotsOfLevel, typeOfSlot));
+            => new(full.Count, placements.Count(p => p.IsTop), Mixing.Of(slotsOfLevel, keyOfSlot));
     }
 
     private static double Volume(Pallet pallet)

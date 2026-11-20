@@ -15,6 +15,16 @@ const BOARD = 0.04;    // độ dày tấm ngang của kệ
 const SLOT_SCALE = 0.9;   // khung vẽ nhỏ hơn ô một chút để thấy khe giữa các khung
 const TOP_PLATE = 0.02;   // khung nóc: tấm phẳng mỏng (nóc không có trần)
 
+// Tô màu theo loại hàng: bảng màu riêng, khác tông với màu type để không nhầm hai chế độ.
+// Màu tính từ Id nên cùng loại hàng luôn cùng màu, không cần lưu DB.
+const PRODUCT_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#9a6324'];
+const UNCLASSIFIED = '#9aa3b2';
+const COLOR_MODE_KEY = 'wt.colorMode';
+
+function productColor(id) {
+  return id == null ? UNCLASSIFIED : PRODUCT_COLORS[(id - 1) % PRODUCT_COLORS.length];
+}
+
 export function createWarehouse3d(container, { getReplay = () => null } = {}) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xeef1f5);
@@ -38,6 +48,23 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
   const overlay = document.createElement('div');
   overlay.className = 'view3d-overlay';
   container.appendChild(overlay);
+
+  // Chế độ màu: 'size' (theo type pallet) hoặc 'product' (theo loại hàng). Nhớ trong trình duyệt này.
+  let colorMode = 'size';
+  try { colorMode = localStorage.getItem(COLOR_MODE_KEY) === 'product' ? 'product' : 'size'; } catch { /* không có storage */ }
+
+  function slotColor(slot) {
+    return colorMode === 'product' ? productColor(slot.productTypeId) : slot.color;
+  }
+
+  // Gắn một lần vào overlay: showOverlay thay cả innerHTML nên không gắn vào từng nút.
+  overlay.addEventListener('click', (e) => {
+    const mode = e.target.closest('[data-color-mode]')?.dataset.colorMode;
+    if (!mode || mode === colorMode) return;
+    colorMode = mode;
+    try { localStorage.setItem(COLOR_MODE_KEY, mode); } catch { /* bỏ qua */ }
+    if (current) update(current.layout, current.slots);   // chỉ vẽ lại, không gọi API
+  });
 
   // Nút tốc độ robot chở hàng (góc dưới trái).
   const speedBar = document.createElement('div');
@@ -207,7 +234,7 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
 
     const pallet = new THREE.Mesh(
       new THREE.BoxGeometry(Math.min(dx, sizeX), height, Math.min(dz, sizeZ)),
-      new THREE.MeshStandardMaterial({ color: new THREE.Color(slot.color), transparent: true, opacity: 0.95 }),
+      new THREE.MeshStandardMaterial({ color: new THREE.Color(slotColor(slot)), transparent: true, opacity: 0.95 }),
     );
     pallet.position.set(center.x, floor + height / 2, center.z);
     pallet.add(new THREE.LineSegments(
@@ -253,12 +280,19 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
     }
 
     const filled = slots.filter((s) => s.palletId != null).length;
-    const types = new Map(slots.filter((s) => s.typeCode).map((s) => [s.typeCode, s.color]));
-    const legend = [...types].map(([code, color]) =>
-      `<span class="legend-item"><i style="background:${color}"></i>Type ${code}</span>`).join('');
+    const legendItems = colorMode === 'product'
+      ? new Map(slots.filter((s) => s.palletId != null).map((s) =>
+          [s.productTypeId ?? 'none', [productColor(s.productTypeId), s.productTypeName ?? 'Chưa phân loại']]))
+      : new Map(slots.filter((s) => s.typeCode).map((s) => [s.typeCode, [s.color, `Type ${s.typeCode}`]]));
+    const legend = [...legendItems.values()].map(([color, label]) =>
+      `<span class="legend-item"><i style="background:${color}"></i>${escapeHtml(label)}</span>`).join('');
     showOverlay(`
       <strong>${escapeHtml(layout.name)}</strong>
       <p>${filled} / ${slots.length} khung có hàng</p>
+      <p class="color-mode">Màu theo:
+        <button type="button" data-color-mode="size" class="${colorMode === 'size' ? 'active' : ''}">Cỡ</button>
+        <button type="button" data-color-mode="product" class="${colorMode === 'product' ? 'active' : ''}">Loại hàng</button>
+      </p>
       ${legend ? `<p class="legend">${legend}</p>` : ''}
       ${missing && slots.length ? '<p class="warn">slotWorldPosition chưa viết: chưa vẽ được khung.</p>' : ''}
       <p class="hint">Kéo để xoay, cuộn để phóng to, bấm vào khung để xem.</p>
@@ -281,7 +315,7 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
     holder.innerHTML = `
       <p><strong>${slot.code}</strong>${slot.isTop ? ' (nóc)' : ''}</p>
       <p>${slot.palletId != null
-        ? `Pallet ${slot.palletCode} · type ${slot.typeCode}`
+        ? `Pallet ${slot.palletCode} · type ${slot.typeCode} · ${escapeHtml(slot.productTypeName ?? 'Chưa phân loại')}`
         : 'Khung trống'}</p>
     `;
   }
@@ -361,7 +395,7 @@ export function createWarehouse3d(container, { getReplay = () => null } = {}) {
         target, from, to: target.pallet.position.clone(),
         flyer: new THREE.Mesh(
           target.pallet.geometry.clone(),
-          new THREE.MeshStandardMaterial({ color: new THREE.Color(placement.color) }),
+          new THREE.MeshStandardMaterial({ color: target.pallet.material.color.clone() }),
         ),
         delay: i * START_DELAY, elapsed: 0,
       };

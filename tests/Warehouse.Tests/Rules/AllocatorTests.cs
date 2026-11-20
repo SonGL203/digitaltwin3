@@ -397,7 +397,7 @@ public class AllocatorTests
     {
         // Khung đầu được lượt trước (Distributor) giữ cho type C: không xếp vào đó, và kệ coi như đã có C.
         var candidates = Candidates(LowRack("K1", levels: 1, bays: 3), LowRack("K2", levels: 1, bays: 3));
-        var reserved = new Dictionary<Slot, string> { [candidates[0].Slot] = "C" };
+        var reserved = new Dictionary<Slot, StockKey> { [candidates[0].Slot] = new StockKey(null, "C") };
 
         var result = Allocator.Allocate(Typed("A", 1, 1.0, 0.8, 1.0), candidates, Margin, reserved);
 

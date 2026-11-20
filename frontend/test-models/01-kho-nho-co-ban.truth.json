@@ -1,0 +1,43 @@
+{
+  "note": "Cơ bản: 3 kệ, một kệ xoay 90°, lối đi rộng. Robot phải ra đủ 3 kệ với đúng số tầng 3, 2, 4.",
+  "width": 12,
+  "depth": 8,
+  "racks": [
+    {
+      "code": "K1",
+      "cx": 3.5,
+      "cy": 2,
+      "length": 4.8,
+      "depth": 1,
+      "bays": 4,
+      "levels": 3,
+      "levelHeight": 1.2,
+      "angle": 0
+    },
+    {
+      "code": "K2",
+      "cx": 3.5,
+      "cy": 5,
+      "length": 4.8,
+      "depth": 1,
+      "bays": 4,
+      "levels": 2,
+      "levelHeight": 1.5,
+      "angle": 0
+    },
+    {
+      "code": "K3",
+      "cx": 9,
+      "cy": 3.5,
+      "length": 3.5999999999999996,
+      "depth": 1,
+      "bays": 3,
+      "levels": 4,
+      "levelHeight": 1,
+      "angle": 90
+    }
+  ],
+  "columns": [],
+  "walls": [],
+  "clutter": []
+}

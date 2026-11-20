@@ -1,0 +1,179 @@
+{
+  "note": "Kho lớn 30 × 20 m: 12 kệ thành 3 dãy, 6 cột theo lưới. Test quét đường dài và số kệ nhiều.",
+  "width": 30,
+  "depth": 20,
+  "racks": [
+    {
+      "code": "K1",
+      "cx": 4,
+      "cy": 3,
+      "length": 5.2,
+      "depth": 1.1,
+      "bays": 4,
+      "levels": 4,
+      "levelHeight": 1.3,
+      "angle": 0
+    },
+    {
+      "code": "K2",
+      "cx": 11,
+      "cy": 3,
+      "length": 5.2,
+      "depth": 1.1,
+      "bays": 4,
+      "levels": 2,
+      "levelHeight": 1.3,
+      "angle": 0
+    },
+    {
+      "code": "K3",
+      "cx": 18,
+      "cy": 3,
+      "length": 5.2,
+      "depth": 1.1,
+      "bays": 4,
+      "levels": 3,
+      "levelHeight": 1.3,
+      "angle": 0
+    },
+    {
+      "code": "K4",
+      "cx": 25,
+      "cy": 3,
+      "length": 5.2,
+      "depth": 1.1,
+      "bays": 4,
+      "levels": 4,
+      "levelHeight": 1.3,
+      "angle": 0
+    },
+    {
+      "code": "K5",
+      "cx": 4,
+      "cy": 9,
+      "length": 5.2,
+      "depth": 1.1,
+      "bays": 4,
+      "levels": 2,
+      "levelHeight": 1.3,
+      "angle": 0
+    },
+    {
+      "code": "K6",
+      "cx": 11,
+      "cy": 9,
+      "length": 5.2,
+      "depth": 1.1,
+      "bays": 4,
+      "levels": 3,
+      "levelHeight": 1.3,
+      "angle": 0
+    },
+    {
+      "code": "K7",
+      "cx": 18,
+      "cy": 9,
+      "length": 5.2,
+      "depth": 1.1,
+      "bays": 4,
+      "levels": 4,
+      "levelHeight": 1.3,
+      "angle": 0
+    },
+    {
+      "code": "K8",
+      "cx": 25,
+      "cy": 9,
+      "length": 5.2,
+      "depth": 1.1,
+      "bays": 4,
+      "levels": 2,
+      "levelHeight": 1.3,
+      "angle": 0
+    },
+    {
+      "code": "K9",
+      "cx": 4,
+      "cy": 15,
+      "length": 5.2,
+      "depth": 1.1,
+      "bays": 4,
+      "levels": 3,
+      "levelHeight": 1.3,
+      "angle": 0
+    },
+    {
+      "code": "K10",
+      "cx": 11,
+      "cy": 15,
+      "length": 5.2,
+      "depth": 1.1,
+      "bays": 4,
+      "levels": 4,
+      "levelHeight": 1.3,
+      "angle": 0
+    },
+    {
+      "code": "K11",
+      "cx": 18,
+      "cy": 15,
+      "length": 5.2,
+      "depth": 1.1,
+      "bays": 4,
+      "levels": 2,
+      "levelHeight": 1.3,
+      "angle": 0
+    },
+    {
+      "code": "K12",
+      "cx": 25,
+      "cy": 15,
+      "length": 5.2,
+      "depth": 1.1,
+      "bays": 4,
+      "levels": 3,
+      "levelHeight": 1.3,
+      "angle": 0
+    }
+  ],
+  "columns": [
+    {
+      "x": 7.25,
+      "y": 5.75,
+      "width": 0.5,
+      "depth": 0.5
+    },
+    {
+      "x": 7.25,
+      "y": 11.75,
+      "width": 0.5,
+      "depth": 0.5
+    },
+    {
+      "x": 14.25,
+      "y": 5.75,
+      "width": 0.5,
+      "depth": 0.5
+    },
+    {
+      "x": 14.25,
+      "y": 11.75,
+      "width": 0.5,
+      "depth": 0.5
+    },
+    {
+      "x": 21.25,
+      "y": 5.75,
+      "width": 0.5,
+      "depth": 0.5
+    },
+    {
+      "x": 21.25,
+      "y": 11.75,
+      "width": 0.5,
+      "depth": 0.5
+    }
+  ],
+  "walls": [],
+  "clutter": []
+}

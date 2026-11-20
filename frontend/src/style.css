@@ -296,6 +296,9 @@ button.primary:disabled { opacity: 0.45; cursor: not-allowed; }   /* bị khoá 
 .view3d-overlay .legend { display: flex; flex-wrap: wrap; gap: 8px; }
 .view3d-overlay .legend-item { display: inline-flex; align-items: center; gap: 4px; }
 .view3d-overlay .legend-item i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+.view3d-overlay .color-mode { display: flex; align-items: center; gap: 4px; }
+.view3d-overlay .color-mode button { pointer-events: auto; padding: 2px 8px; border: 1px solid #c5ccd8; background: #fff; border-radius: 4px; cursor: pointer; }
+.view3d-overlay .color-mode button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
 
 /* Hộp hỏi lại trong trang (thay window.confirm) */
 .confirm-dialog { border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; max-width: 360px; color: var(--text); }

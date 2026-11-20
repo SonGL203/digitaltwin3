@@ -53,6 +53,7 @@ public record DistributionViewModel(
 public record SlotViewModel(
     int Id, int RackId, string RackCode, string Code, int Level, int Bay, bool IsTop,
     int? PalletId, string? PalletCode, string? TypeCode, string? Color,
-    double? PalletAlongBay = null, double? PalletAcrossDepth = null, double? PalletHeight = null);
+    double? PalletAlongBay = null, double? PalletAcrossDepth = null, double? PalletHeight = null,
+    int? ProductTypeId = null, string? ProductTypeName = null);
 
 public record ResetViewModel(int Cleared);
