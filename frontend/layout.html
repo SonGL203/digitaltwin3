@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WarehouseTwin - Mặt bằng</title>
+  <link rel="stylesheet" href="/src/css/base.css" />
+  <link rel="stylesheet" href="/src/css/layout.css" />
+</head>
+<body>
+  <header class="topbar" id="topbar"></header>
+
+  <div class="room-header">
+    <a class="btn" href="index.html">← Danh sách kho</a>
+    <strong id="roomTitle"></strong>
+    <nav class="tabs" id="roomTabs"></nav>
+  </div>
+
+  <div class="workspace">
+    <!-- ============ Bảng bên trái: nhập và sửa cấu hình (chỉ sửa BẢN NHÁP, bấm "Lưu nháp" mới gửi server) ============ -->
+    <aside class="sidebar">
+      <div class="draft-bar">
+        <span class="draft-status" id="draftStatus"></span>
+        <button type="button" id="btnDiscard">Bỏ thay đổi</button>
+        <button type="button" id="btnSave" class="primary">Lưu nháp</button>
+      </div>
+
+      <!-- Thông số phòng -->
+      <details class="section" open>
+        <summary>Phòng</summary>
+        <form id="roomForm" class="grid-form">
+          <label class="full">Tên phòng<input name="name" maxlength="50" required /></label>
+          <label>Dài (m)<input type="number" name="width" min="0.5" step="any" required /></label>
+          <label>Rộng (m)<input type="number" name="depth" min="0.5" step="any" required /></label>
+          <label>Lưới (m)<input type="number" name="gridSize" min="0.05" step="any" required /></label>
+          <label>Lối đi tối thiểu (m)<input type="number" name="minGap" min="0" step="any" required /></label>
+          <label>Khoảng hở đỉnh (m)<input type="number" name="margin" min="0" step="any" required /></label>
+          <div class="form-actions"><button type="submit">Áp dụng</button></div>
+        </form>
+        <p class="hint">Đổi lưới không làm kệ nào di chuyển. Thu nhỏ phòng hoặc tăng lối đi thì server kiểm tra lại mọi kệ khi lưu nháp.</p>
+      </details>
+
+      <!-- Phần đang chọn: hiện form của kệ, hoặc form của tường/cột, hoặc câu hướng dẫn -->
+      <p class="hint" id="nothingSelected">Bấm vào một kệ hoặc cột trên mặt bằng để xem và sửa.</p>
+
+      <section class="section" id="rackPanel" hidden>
+        <h2 id="rackTitle"></h2>
+        <form id="rackForm" class="grid-form">
+          <!-- các ô nhập của kệ được JS chèn vào đầu form này (lấy từ <template> ở cuối trang) -->
+          <p class="live full" id="rackLive"></p>
+          <div class="form-actions">
+            <button type="button" class="danger push-left" id="btnRemoveRack">Xoá kệ</button>
+            <button type="button" id="btnCancelRack">Huỷ</button>
+            <button type="submit" class="primary">Áp dụng</button>
+          </div>
+        </form>
+        <p class="hint" id="rackHint"></p>
+      </section>
+
+      <section class="section" id="obstaclePanel" hidden>
+        <h2 id="obstacleTitle"></h2>
+        <form id="obstacleForm" class="grid-form">
+          <label>X (m)<input type="number" name="x" min="0" step="any" required /></label>
+          <label>Y (m)<input type="number" name="y" min="0" step="any" required /></label>
+          <label>Dài (m)<input type="number" name="width" min="0.01" step="any" required /></label>
+          <label>Rộng (m)<input type="number" name="depth" min="0.01" step="any" required /></label>
+          <div class="form-actions">
+            <button type="button" class="danger push-left" id="btnRemoveObstacle">Xoá</button>
+            <button type="submit" class="primary">Áp dụng</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Danh sách kệ -->
+      <details class="section" open>
+        <summary id="rackListTitle">Kệ</summary>
+        <ul class="rack-list" id="rackList"></ul>
+      </details>
+
+      <!-- Cấu hình kệ mới (đặt bằng chuột) -->
+      <details class="section">
+        <summary>Kệ mới</summary>
+        <form id="newRackForm" class="grid-form">
+          <label class="full">Mã<input id="nextRackCode" disabled /></label>
+          <!-- các ô nhập của kệ mới được JS chèn vào đây -->
+          <div class="form-actions"><button type="button" id="btnPlaceRack">Đặt bằng chuột</button></div>
+        </form>
+        <p class="hint">Bấm "Đặt bằng chuột" rồi bấm lên mặt bằng; phím R để xoay, Esc để huỷ.</p>
+      </details>
+
+      <!-- Tường, cột -->
+      <details class="section">
+        <summary id="obstacleListTitle">Tường, cột</summary>
+        <ul class="rack-list" id="obstacleList"></ul>
+        <form id="addObstacleForm" class="grid-form">
+          <label class="full">Loại
+            <select name="kind"><option value="Column">Cột</option><option value="Wall">Tường</option></select>
+          </label>
+          <label>X (m)<input type="number" name="x" value="0" min="0" step="any" required /></label>
+          <label>Y (m)<input type="number" name="y" value="0" min="0" step="any" required /></label>
+          <label>Dài (m)<input type="number" name="width" value="0.4" min="0.01" step="any" required /></label>
+          <label>Rộng (m)<input type="number" name="depth" value="0.4" min="0.01" step="any" required /></label>
+          <div class="form-actions"><button type="submit">Thêm</button></div>
+        </form>
+      </details>
+    </aside>
+
+    <!-- ============ Vùng vẽ ============ -->
+    <main class="stage">
+      <div class="toolbar">
+        <div class="tool-group">
+          <button type="button" data-tool="select" title="Bấm để chọn, kéo kệ để dời, kéo chỗ trống để dời màn hình">Chọn / dời</button>
+          <button type="button" data-tool="add-rack" title="Bấm lên mặt bằng để đặt kệ mới (cấu hình ở bảng bên)">Đặt kệ</button>
+          <button type="button" data-tool="add-column" title="Bấm lên mặt bằng để đặt cột 0,4 × 0,4 m">Đặt cột</button>
+        </div>
+        <span class="toolbar-sep"></span>
+        <button type="button" id="btnFit" title="Đưa cả phòng vào khung nhìn">Vừa khung</button>
+        <button type="button" id="btnZoomOut" title="Thu nhỏ">−</button>
+        <span class="zoom" id="zoomLabel"></span>
+        <button type="button" id="btnZoomIn" title="Phóng to">+</button>
+        <label><input type="checkbox" id="chkGrid" /> Lưới <span id="gridLabel"></span></label>
+        <span class="toolbar-hint" id="toolHint"></span>
+      </div>
+      <div class="canvas-wrap" id="canvasWrap"></div>
+    </main>
+  </div>
+
+  <footer class="statusbar">
+    <span id="status-message"></span>
+    <span id="status-cursor"></span>
+  </footer>
+
+  <!-- Các ô nhập của một kệ (dùng cho cả form sửa kệ và form kệ mới) -->
+  <template id="rackFields">
+    <label class="pos">X (m)<input type="number" name="x" min="0" step="any" required /></label>
+    <label class="pos">Y (m)<input type="number" name="y" min="0" step="any" required /></label>
+    <label>Xoay
+      <select name="rotation" data-int><option value="0">0°</option><option value="90">90°</option></select>
+    </label>
+    <label>Số tầng<input type="number" name="levels" min="1" step="1" data-int required /></label>
+    <label>Cao tầng (m)<input type="number" name="levelHeight" min="0.1" step="any" required /></label>
+    <label>Số ô hàng<input type="number" name="bays" min="1" step="1" data-int required /></label>
+    <label>Rộng ô (m)<input type="number" name="bayWidth" min="0.1" step="any" required /></label>
+    <label>Sâu (m)<input type="number" name="depth" min="0.1" step="any" required /></label>
+    <label>Tải khung (kg)<input type="number" name="maxWeight" min="1" step="any" required /></label>
+    <label class="check"><input type="checkbox" name="hasTop" /> Có nóc</label>
+  </template>
+
+  <script type="module" src="/src/pages/layout.js"></script>
+</body>
+</html>

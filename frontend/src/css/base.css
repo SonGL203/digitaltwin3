@@ -1,0 +1,108 @@
+/* CSS DÙNG CHUNG cho mọi trang: màu, nút, ô nhập, thanh trên, thanh dưới, form, hộp hỏi lại.
+   Canvas 2D đọc các biến --c2d-* (màu) bằng getComputedStyle. */
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --border: #dde1e8;
+  --text: #1d2433;
+  --muted: #6b7385;
+  --accent: #2563eb;
+  --ok: #1f8a4c;
+  --error: #c0392b;
+  --warn: #b45309;
+
+  --c2d-outside: #e9ecf1;
+  --c2d-floor: #ffffff;
+  --c2d-grid: #e3e7ee;
+  --c2d-grid-major: #c9d0db;
+  --c2d-room-edge: #1d2433;
+  --c2d-wall: #3b4252;
+  --c2d-column: #8b93a5;
+  --c2d-rack: #dbe7ff;
+  --c2d-rack-edge: #2563eb;
+  --c2d-rack-bay: #9db8f0;
+  --c2d-rack-selected: #f59e0b;
+  --c2d-label: #1d2433;
+  --c2d-ghost-ok: rgba(31, 138, 76, 0.22);
+  --c2d-ghost-ok-edge: #1f8a4c;
+  --c2d-ghost-bad: rgba(192, 57, 43, 0.22);
+  --c2d-ghost-bad-edge: #c0392b;
+  --c2d-ghost-pending: rgba(107, 115, 133, 0.2);
+  --c2d-ghost-pending-edge: #6b7385;
+}
+
+/* ================= nền tảng ================= */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { display: flex; flex-direction: column; font: 14px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+[hidden] { display: none !important; }
+a { color: var(--accent); }
+h1 { font-size: 18px; margin: 0; }
+h2 { font-size: 15px; margin: 0 0 8px; }
+h3 { font-size: 15px; margin: 18px 0 8px; }
+.hint { color: var(--muted); font-size: 13px; }
+.muted { color: var(--muted); }
+.ok { color: var(--ok); }
+.warn, .error { color: var(--error); }
+
+/* ================= nút và ô nhập ================= */
+button, .btn {
+  font: inherit; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel); color: var(--text); cursor: pointer; text-decoration: none;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+button:hover:not(:disabled), .btn:hover { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.primary, .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--error); }
+button.icon { padding: 2px 8px; }
+button[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: #fff; }
+body.busy { cursor: wait; }
+body.busy button, body.busy .btn { pointer-events: none; opacity: 0.6; }   /* đang chờ server: không cho bấm thêm */
+
+input, select { font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--text); background: var(--panel); min-width: 0; }
+input:disabled { color: var(--muted); background: var(--bg); }
+
+/* ================= thanh trên, tab, thanh dưới ================= */
+.topbar { display: flex; gap: 16px; align-items: center; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.brand { white-space: nowrap; }
+.tabs { display: flex; gap: 4px; }
+.tabs a { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); text-decoration: none; background: var(--panel); }
+.tabs a.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.room-header { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.room-header .tabs { margin-left: auto; }
+
+.statusbar { display: flex; justify-content: space-between; gap: 16px; padding: 4px 16px; font-size: 13px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--border); min-height: 26px; }
+#status-message.error { color: var(--error); }
+#status-cursor { font-variant-numeric: tabular-nums; }
+
+/* ================= khung trang thường (danh sách kho, nhập lô) ================= */
+.page-content { flex: 1; overflow-y: auto; padding: 20px 24px; width: 100%; max-width: 980px; margin: 0 auto; }
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+
+/* ================= form dạng lưới ================= */
+.grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; margin: 4px 0; }
+.grid-form.wide { grid-template-columns: repeat(3, 1fr); }
+.grid-form > * { min-width: 0; }
+.grid-form label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
+.grid-form label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 13px; }
+.grid-form .full { grid-column: 1 / -1; }
+.grid-form input, .grid-form select { width: 100%; font-size: 13px; }
+.form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 6px; margin-top: 2px; }
+.form-actions .push-left { margin-right: auto; }
+.live { margin: 0; font-size: 12px; color: var(--muted); min-height: 1.4em; }
+.live.ok { color: var(--ok); }
+.live.error { color: var(--error); }
+
+/* ================= khung vẽ canvas (dùng cho trang Mặt bằng và Kho 3D) ================= */
+.canvas-wrap { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+.canvas-wrap canvas { position: absolute; inset: 0; display: block; }
+.canvas-wrap canvas:focus { outline: none; }
+
+/* ================= hộp hỏi lại (askConfirm) ================= */
+.confirm-dialog { border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; max-width: 360px; color: var(--text); }
+.confirm-dialog::backdrop { background: rgba(29, 36, 51, 0.35); }
+.confirm-dialog p { margin: 0 0 14px; line-height: 1.4; }
+.confirm-dialog .form-actions { display: flex; justify-content: flex-end; gap: 8px; }

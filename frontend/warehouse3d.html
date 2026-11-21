@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WarehouseTwin - Kho 3D</title>
+  <link rel="stylesheet" href="/src/css/base.css" />
+  <link rel="stylesheet" href="/src/css/warehouse3d.css" />
+</head>
+<body>
+  <header class="topbar" id="topbar"></header>
+
+  <div class="room-header">
+    <a class="btn" href="index.html">← Danh sách kho</a>
+    <strong id="roomTitle"></strong>
+    <nav class="tabs" id="roomTabs"></nav>
+  </div>
+
+  <main class="stage">
+    <!-- Khung vẽ 3D. JS thêm thẻ <canvas> của Three.js vào đây; hai bảng bên dưới nổi lên trên cảnh. -->
+    <div class="canvas-wrap" id="view">
+
+      <div class="view3d-overlay">
+        <h3 id="roomName">Đang tải…</h3>
+        <p id="summary"></p>
+        <p>Màu theo:
+          <button type="button" id="btnColorSize" aria-pressed="true">Cỡ</button>
+          <button type="button" id="btnColorProduct" aria-pressed="false">Loại hàng</button>
+        </p>
+        <p class="legend" id="legend"></p>
+        <p class="hint">Kéo để xoay, cuộn để phóng to, bấm vào khung để xem.</p>
+        <p id="slotInfo"></p>
+        <p>
+          <a class="btn primary" href="receive.html">Nhập lô hàng</a>
+          <button type="button" class="danger" id="btnReset" title="Lấy mọi pallet ra khỏi khung của kho này">Đặt lại kho</button>
+        </p>
+      </div>
+
+      <div class="view3d-speed">
+        <span>Tốc độ</span>
+        <button type="button" data-speed="1" aria-pressed="true">×1</button>
+        <button type="button" data-speed="2" aria-pressed="false">×2</button>
+        <button type="button" data-speed="4" aria-pressed="false">×4</button>
+        <button type="button" data-speed="8" aria-pressed="false">×8</button>
+        <button type="button" id="btnSkip">Bỏ qua</button>
+        <button type="button" id="btnReplay" title="Phát lại hiệu ứng các pallet của lần xếp gần nhất">Phát lại</button>
+      </div>
+    </div>
+  </main>
+
+  <footer class="statusbar"><span id="status-message"></span></footer>
+
+  <script type="module" src="/src/pages/warehouse3d.js"></script>
+</body>
+</html>

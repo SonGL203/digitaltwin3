@@ -1,0 +1,14 @@
+/* CSS riêng của trang Nhập lô hàng (receive.html) */
+
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+table.lines input { width: 84px; }
+table.lines select { max-width: 150px; }
+tr.bad td { color: var(--error); }
+
+/* Ô vuông màu của type pallet (màu đặt bằng JS) */
+.chip { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; }
+
+/* Form thêm loại hàng ở cuối trang */
+.inline-form { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--border); }
+.inline-form input { width: 130px; }

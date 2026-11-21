@@ -1,0 +1,23 @@
+/* CSS riêng của trang Kho 3D (warehouse3d.html) */
+
+/* Bảng thông tin nổi ở góc trên trái cảnh 3D */
+.view3d-overlay {
+  position: absolute; top: 10px; left: 10px; z-index: 2; max-width: 270px; padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.92); border: 1px solid var(--border); border-radius: 6px; font-size: 13px;
+  pointer-events: none;   /* chuột xuyên qua bảng để xoay cảnh; các nút bên dưới bật lại */
+}
+.view3d-overlay h3 { margin: 0 0 4px; }
+.view3d-overlay p { margin: 4px 0; }
+.view3d-overlay button, .view3d-overlay a { pointer-events: auto; }
+
+/* Chú giải màu */
+.legend { display: flex; flex-wrap: wrap; gap: 8px; }
+.legend-item { display: inline-flex; align-items: center; gap: 4px; }
+.legend-item i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+
+/* Nút tốc độ hiệu ứng pallet bay, góc dưới trái */
+.view3d-speed {
+  position: absolute; left: 10px; bottom: 10px; z-index: 2; display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; background: rgba(255, 255, 255, 0.92); border: 1px solid var(--border); border-radius: 6px; font-size: 13px;
+}
+.stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }

@@ -1,0 +1,9 @@
+/* CSS riêng của trang Danh sách kho (index.html) */
+
+.room-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.room-card { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: inherit; text-decoration: none; }
+.room-card:hover { border-color: var(--accent); }
+.room-card strong { font-size: 15px; }
+
+/* Khung chứa form thêm kho */
+.box { max-width: 520px; padding: 14px 16px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }

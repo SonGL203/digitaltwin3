@@ -1,60 +1,51 @@
 <!doctype html>
 <html lang="vi">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WarehouseTwin</title>
-    <link rel="stylesheet" href="/src/style.css" />
-  </head>
-  <body>
-    <header class="topbar">
-      <strong class="brand">WarehouseTwin</strong>
-      <nav class="steps" id="features" aria-label="Tính năng">
-        <button type="button" data-feature="rooms">Kho hàng (mặt bằng, 3D)</button>
-        <button type="button" data-feature="receive">Nhập lô hàng</button>
-      </nav>
-      <span id="api-status" class="api-status">Đang kết nối API…</span>
-    </header>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WarehouseTwin - Danh sách kho</title>
+  <link rel="stylesheet" href="/src/css/base.css" />
+  <link rel="stylesheet" href="/src/css/rooms.css" />
+</head>
+<body>
+  <header class="topbar" id="topbar"></header>
 
-    <div class="workspace" id="workspace">
-      <aside class="sidebar" id="sidebar"></aside>
-
-      <main class="stage">
-        <!-- Thanh của kho đang mở (tính năng Kho hàng): về danh sách, tên kho, chuyển Mặt bằng / Kho 3D. -->
-        <div class="room-header" id="room-bar" hidden>
-          <button type="button" id="back-to-rooms">← Danh sách kho</button>
-          <strong id="room-title"></strong>
-          <nav class="steps room-tabs" id="steps" aria-label="Xem kho">
-            <button type="button" data-step="layout">Mặt bằng</button>
-            <button type="button" data-step="warehouse">Kho 3D</button>
-            <button type="button" data-step="robot">Robot</button>
-          </nav>
-        </div>
-        <section class="view" id="view-layout">
-          <div class="room-list" id="room-list"></div>
-          <div class="room-editor" id="room-editor">
-            <div class="toolbar" id="toolbar-2d"></div>
-            <div class="canvas-wrap" id="editor2d"></div>
-          </div>
-        </section>
-        <section class="view" id="view-warehouse" hidden>
-          <div class="canvas-wrap" id="viewport3d"></div>
-          <aside class="receive-dock receive" id="stock-root" aria-label="Kho đang mở"></aside>
-        </section>
-        <section class="view" id="view-robot" hidden>
-          <div class="robot-view" id="robot-root"></div>
-        </section>
-        <section class="view" id="view-receive" hidden>
-          <div class="receive receive-page" id="receive-root"></div>
-        </section>
-      </main>
+  <main class="page-content">
+    <div class="page-head">
+      <h1>Kho (<span id="roomCount">0</span>)</h1>
+      <span class="actions">
+        <a class="btn primary" href="receive.html" id="linkReceive">Nhập lô hàng</a>
+        <button type="button" id="btnOpenForm">+ Thêm kho</button>
+      </span>
     </div>
 
-    <footer class="statusbar">
-      <span id="status-message"></span>
-      <span id="status-cursor"></span>
-    </footer>
+    <!-- Form thêm kho: ẩn cho tới khi bấm "+ Thêm kho" (hoặc khi chưa có kho nào) -->
+    <form class="box" id="roomForm" autocomplete="off" hidden>
+      <h2>Kho mới</h2>
+      <div class="grid-form wide">
+        <label class="full">Tên kho<input name="name" maxlength="50" required /></label>
+        <label>Dài (m)<input type="number" name="width" value="20" min="0.5" max="500" step="any" required /></label>
+        <label>Rộng (m)<input type="number" name="depth" value="12" min="0.5" max="500" step="any" required /></label>
+        <label>Lưới (m)<input type="number" name="gridSize" value="0.5" min="0.05" max="10" step="any" required /></label>
+        <label>Lối đi tối thiểu (m)<input type="number" name="minGap" value="1" min="0" max="20" step="any" required /></label>
+        <label>Khoảng hở đỉnh (m)<input type="number" name="margin" value="0.05" min="0" max="2" step="any" required /></label>
+      </div>
+      <p class="live error" id="formError"></p>
+      <div class="form-actions">
+        <button type="button" id="btnCloseForm">Huỷ</button>
+        <button type="submit" class="primary">Tạo kho</button>
+      </div>
+      <p class="hint">Lưới chỉ là bước "hít" khi kéo kệ. Vào kho rồi vẫn đổi được mọi thông số này.</p>
+    </form>
 
-    <script type="module" src="/src/main.js"></script>
-  </body>
+    <p class="hint" id="emptyHint" hidden>Chưa có kho nào. Nhập thông số để tạo kho đầu tiên.</p>
+
+    <!-- Mỗi kho một thẻ, JS vẽ vào đây -->
+    <ul class="room-cards" id="roomCards"></ul>
+  </main>
+
+  <footer class="statusbar"><span id="status-message"></span></footer>
+
+  <script type="module" src="/src/pages/rooms.js"></script>
+</body>
 </html>
