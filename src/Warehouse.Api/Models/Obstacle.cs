@@ -1,41 +1,17 @@
-﻿using System;
-using System.Collections.Generic;
-
-namespace Warehouse.Api.Models;
-
-public partial class Obstacle
-{
-    public int Id { get; set; }
-
-    public int RoomId { get; set; }
-
-    public string Kind { get; set; } = null!;
-
-    public double X { get; set; }
-
-    public double Y { get; set; }
-
-    public double Width { get; set; }
-
-    public double Depth { get; set; }
-
-    public virtual Room Room { get; set; } = null!;
 namespace Warehouse.Api.Models;
 
 public enum ObstacleKind
 {
-    Wall,     // tường ngăn
-    Column,   // cột
+    Wall,
+    Column,
 }
 
-// Tường hoặc cột trong phòng: hình chữ nhật bằng mét.
 public class Obstacle
 {
     public int Id { get; set; }
     public ObstacleKind Kind { get; set; }
-    public double X { get; set; }       // góc trên trái
+    public double X { get; set; }
     public double Y { get; set; }
     public double Width { get; set; }
     public double Depth { get; set; }
-
 }

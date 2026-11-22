@@ -3,11 +3,8 @@ namespace Warehouse.Api.Data;
 using Npgsql;
 using Warehouse.Api.Models;
 
-// Lớp thật đọc dữ liệu từ PostgreSQL, thay cho SampleWarehouseStore (dữ liệu gõ cứng).
-// Service và Controller không biết dữ liệu lấy từ đâu, chỉ làm việc với IWarehouseStore.
 public class PostgresWarehouseStore(IConfiguration config) : IWarehouseStore
 {
-    // Chuỗi kết nối lấy từ cấu hình (ConnectionStrings:Warehouse)
     private readonly string _connectionString = config.GetConnectionString("Warehouse")
         ?? throw new InvalidOperationException("Thiếu ConnectionStrings:Warehouse.");
 
@@ -16,10 +13,9 @@ public class PostgresWarehouseStore(IConfiguration config) : IWarehouseStore
         using var conn = new NpgsqlConnection(_connectionString);
         conn.Open();
 
-        // 1. Phòng
         Room? room = null;
         using (var cmd = new NpgsqlCommand(
-            @"SELECT ""Id"", ""Name"", ""Width"", ""Depth"", ""GridSize"", ""MinGap"", ""Margin"", ""Version""
+            @"SELECT ""Id"", ""Name"", ""Width"", ""Depth"", ""Height"", ""GridSize"", ""MinGap"", ""Margin"", ""Version""
               FROM ""Rooms"" WHERE ""Id"" = @id", conn))
         {
             cmd.Parameters.AddWithValue("id", id);
@@ -29,15 +25,14 @@ public class PostgresWarehouseStore(IConfiguration config) : IWarehouseStore
                 room = new Room
                 {
                     Id = reader.GetInt32(0), Name = reader.GetString(1),
-                    Width = reader.GetDouble(2), Depth = reader.GetDouble(3),
-                    GridSize = reader.GetDouble(4), MinGap = reader.GetDouble(5), Margin = reader.GetDouble(6),
-                    Version = reader.GetInt32(7),
+                    Width = reader.GetDouble(2), Depth = reader.GetDouble(3), Height = reader.GetDouble(4),
+                    GridSize = reader.GetDouble(5), MinGap = reader.GetDouble(6), Margin = reader.GetDouble(7),
+                    Version = reader.GetInt32(8),
                 };
             }
         }
-        if (room == null) return null;     // không có kho này
+        if (room == null) return null;
 
-        // 2. Kệ của phòng (số tầng, chiều cao tầng, nóc, tải trọng tính từ bảng Levels)
         using (var cmd = new NpgsqlCommand(
             @"SELECT k.""Id"", k.""Code"", k.""X"", k.""Y"", k.""Rotation"",
                      COUNT(l.""Id"") FILTER (WHERE NOT l.""IsTop""),
@@ -60,16 +55,15 @@ public class PostgresWarehouseStore(IConfiguration config) : IWarehouseStore
                 {
                     Id = reader.GetInt32(0), Code = reader.GetString(1),
                     X = reader.GetDouble(2), Y = reader.GetDouble(3), Rotation = reader.GetInt32(4),
-                    Levels = (int)reader.GetInt64(5),               // COUNT trả bigint
+                    Levels = (int)reader.GetInt64(5),
                     LevelHeight = reader.GetDouble(6),
                     Bays = reader.GetInt32(7), BayWidth = reader.GetDouble(8), Depth = reader.GetDouble(9),
                     HasTop = reader.GetBoolean(10), MaxWeight = reader.GetDouble(11),
-                    ProductTypeId = reader.IsDBNull(12) ? null : reader.GetInt32(12),   // cột cho phép null
+                    ProductTypeId = reader.IsDBNull(12) ? null : reader.GetInt32(12),
                 });
             }
         }
 
-        // 3. Tường/cột của phòng
         using (var cmd = new NpgsqlCommand(
             @"SELECT ""Id"", ""Kind"", ""X"", ""Y"", ""Width"", ""Depth""
               FROM ""Obstacles"" WHERE ""RoomId"" = @id ORDER BY ""Id""", conn))
@@ -90,7 +84,64 @@ public class PostgresWarehouseStore(IConfiguration config) : IWarehouseStore
         return room;
     }
 
-    // Interface có hàm này nên lớp phải cài đặt, nếu không sẽ không build được
+    public IReadOnlyList<RoomSummary> GetRoomSummaries()
+    {
+        var rooms = new List<RoomSummary>();
+        using var conn = new NpgsqlConnection(_connectionString);
+        conn.Open();
+
+        using var cmd = new NpgsqlCommand(
+            @"SELECT r.""Id"", r.""Name"", r.""Width"", r.""Depth"", r.""Height"", r.""GridSize"",
+                     (SELECT COUNT(*) FROM ""Racks"" k WHERE k.""RoomId"" = r.""Id""),
+                     (SELECT COUNT(*) FROM ""Slots"" s
+                        JOIN ""Levels"" l ON l.""Id"" = s.""LevelId""
+                        JOIN ""Racks"" k ON k.""Id"" = l.""RackId""
+                      WHERE k.""RoomId"" = r.""Id""),
+                     (SELECT COUNT(*) FROM ""Obstacles"" o WHERE o.""RoomId"" = r.""Id"")
+              FROM ""Rooms"" r
+              ORDER BY r.""Id""", conn);
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            rooms.Add(new RoomSummary(
+                reader.GetInt32(0), reader.GetString(1),
+                reader.GetDouble(2), reader.GetDouble(3), reader.GetDouble(4), reader.GetDouble(5),
+                (int)reader.GetInt64(6), (int)reader.GetInt64(7), (int)reader.GetInt64(8)));
+        }
+        return rooms;
+    }
+
+    public bool RoomNameExists(string name)
+    {
+        using var conn = new NpgsqlConnection(_connectionString);
+        conn.Open();
+
+        using var cmd = new NpgsqlCommand(
+            @"SELECT EXISTS (SELECT 1 FROM ""Rooms"" WHERE lower(""Name"") = lower(@name))", conn);
+        cmd.Parameters.AddWithValue("name", name);
+        return (bool)cmd.ExecuteScalar()!;
+    }
+
+    public int AddRoom(Room room)
+    {
+        using var conn = new NpgsqlConnection(_connectionString);
+        conn.Open();
+
+        using var cmd = new NpgsqlCommand(
+            @"INSERT INTO ""Rooms"" (""Name"", ""Width"", ""Depth"", ""Height"", ""GridSize"", ""MinGap"", ""Margin"")
+              VALUES (@name, @width, @depth, @height, @gridSize, @minGap, @margin)
+              RETURNING ""Id""", conn);
+        cmd.Parameters.AddWithValue("name", room.Name);
+        cmd.Parameters.AddWithValue("width", room.Width);
+        cmd.Parameters.AddWithValue("depth", room.Depth);
+        cmd.Parameters.AddWithValue("height", room.Height);
+        cmd.Parameters.AddWithValue("gridSize", room.GridSize);
+        cmd.Parameters.AddWithValue("minGap", room.MinGap);
+        cmd.Parameters.AddWithValue("margin", room.Margin);
+        return (int)cmd.ExecuteScalar()!;
+    }
+
     public IReadOnlyList<Slot> GetSlotsOfRacks(IReadOnlyCollection<int> rackIds)
     {
         var slots = new List<Slot>();
