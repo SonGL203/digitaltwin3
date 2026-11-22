@@ -7,7 +7,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 
 // Nối interface với lớp thật. Đổi nơi lưu dữ liệu chỉ cần sửa dòng IWarehouseStore (sau này: EfWarehouseStore).
-builder.Services.AddScoped<IWarehouseStore, SampleWarehouseStore>();
+builder.Services.AddScoped<IWarehouseStore, PostgresWarehouseStore>();
 builder.Services.AddScoped<IRoomService, RoomService>();
 var app = builder.Build();
 
