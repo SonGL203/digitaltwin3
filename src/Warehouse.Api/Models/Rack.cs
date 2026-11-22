@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ﻿using System;
 using System.Collections.Generic;
 
@@ -31,7 +30,6 @@ public partial class Rack
     public virtual ProductType? ProductType { get; set; }
 
     public virtual Room Room { get; set; } = null!;
-=======
 namespace Warehouse.Api.Models;
 
 // Một kệ. Mỗi kệ tự mang cấu hình của nó (số tầng, số ô, kích thước...). Đơn vị: mét, kg.
@@ -60,5 +58,4 @@ public class Rack
             ? new Rect(X, Y, Depth, length)
             : new Rect(X, Y, length, Depth);
     }
->>>>>>> main
 }

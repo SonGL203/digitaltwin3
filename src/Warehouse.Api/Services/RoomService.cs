@@ -1,6 +1,5 @@
 namespace Warehouse.Api.Services;
 
-<<<<<<< HEAD
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Warehouse.Api.Data;
@@ -103,7 +102,6 @@ public class RoomService(WarehouseDbContext db) : IRoomService
     }
 
     private static ConflictException DuplicateName(string name) => new($"Đã có kho tên \"{name}\".");
-=======
 using Warehouse.Api.Data;
 using Warehouse.Api.ViewModels;
 
@@ -148,5 +146,5 @@ public class RoomService(IWarehouseStore store) : IRoomService
             room.Id, room.Name, room.Width, room.Depth, room.GridSize,
             room.MinGap, room.Margin, room.Version, racks, obstacles);
     }
->>>>>>> main
+
 }

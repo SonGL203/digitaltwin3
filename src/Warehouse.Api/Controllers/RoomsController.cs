@@ -2,7 +2,6 @@ namespace Warehouse.Api.Controllers;
 
 using Microsoft.AspNetCore.Mvc;
 using Warehouse.Api.Services;
-<<<<<<< HEAD
 using Warehouse.Api.ViewModels;
 
 /// <summary>
@@ -24,7 +23,6 @@ public class RoomsController(IRoomService rooms) : ControllerBase
     [HttpPost]
     public Task<RoomCreatedViewModel> Create(CreateRoomRequest request, CancellationToken ct)
         => rooms.CreateAsync(request, ct);
-=======
 
 [ApiController]
 [Route("api/rooms")]
@@ -43,5 +41,5 @@ public class RoomsController(IRoomService roomService) : ControllerBase
         // Có: ASP.NET tự đổi room thành JSON, mã 200
         return Ok(room);
     }
->>>>>>> main
+
 }

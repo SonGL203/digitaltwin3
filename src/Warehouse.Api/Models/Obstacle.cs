@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ﻿using System;
 using System.Collections.Generic;
 
@@ -21,7 +20,6 @@ public partial class Obstacle
     public double Depth { get; set; }
 
     public virtual Room Room { get; set; } = null!;
-=======
 namespace Warehouse.Api.Models;
 
 public enum ObstacleKind
@@ -39,5 +37,5 @@ public class Obstacle
     public double Y { get; set; }
     public double Width { get; set; }
     public double Depth { get; set; }
->>>>>>> main
+
 }

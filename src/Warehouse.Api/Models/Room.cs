@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ﻿using System;
 using System.Collections.Generic;
 
@@ -27,7 +26,6 @@ public partial class Room
     public virtual ICollection<Obstacle> Obstacles { get; set; } = new List<Obstacle>();
 
     public virtual ICollection<Rack> Racks { get; set; } = new List<Rack>();
-=======
 namespace Warehouse.Api.Models;
 
 // Một phòng (kho). Sàn là hình chữ nhật Width × Depth mét, góc trên trái ở (0, 0).
@@ -43,5 +41,5 @@ public class Room
     public int Version { get; set; }           // tăng mỗi lần lưu, để phát hiện hai người sửa cùng lúc
     public List<Rack> Racks { get; set; } = [];
     public List<Obstacle> Obstacles { get; set; } = [];
->>>>>>> main
+
 }
