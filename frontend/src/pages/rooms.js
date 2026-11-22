@@ -85,6 +85,7 @@ roomForm.addEventListener('submit', async function (event) {
     name: form.name.value,
     width: Number(form.width.value),
     depth: Number(form.depth.value),
+    height: Number(form.height.value),
     gridSize: Number(form.gridSize.value),
     minGap: Number(form.minGap.value),
     margin: Number(form.margin.value),
