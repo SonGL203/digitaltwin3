@@ -7,7 +7,9 @@ builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 
 builder.Services.AddScoped<IWarehouseStore, PostgresWarehouseStore>();
+builder.Services.AddScoped<ILayoutStore, PostgresLayoutStore>();
 builder.Services.AddScoped<IRoomService, RoomService>();
+builder.Services.AddScoped<ILayoutService, LayoutService>();
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())

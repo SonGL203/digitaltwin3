@@ -2,6 +2,7 @@ namespace Warehouse.Api.Services;
 
 using Warehouse.Api.Data;
 using Warehouse.Api.Models;
+using Warehouse.Api.Rules;
 using Warehouse.Api.ViewModels;
 
 public interface IRoomService
@@ -42,7 +43,7 @@ public class RoomService(IWarehouseStore store) : IRoomService
                 r.Id, r.Code, r.X, r.Y, r.Rotation,
                 r.Levels, r.LevelHeight, r.Bays, r.BayWidth, r.Depth,
                 r.HasTop, r.MaxWeight, r.ProductTypeId,
-                bounds.Width, bounds.Depth,
+                Math.Round(bounds.Width, 6), Math.Round(bounds.Depth, 6),   // 3 × 1,2 ra 3,6 chứ không phải 3,5999…
                 slotsPerRack.GetValueOrDefault(r.Id));
         }).ToList();
 
@@ -55,19 +56,9 @@ public class RoomService(IWarehouseStore store) : IRoomService
             room.GridSize, room.MinGap, room.Margin, room.Version, racks, obstacles);
     }
 
-    public string? CheckNewRoom(CreateRoomRequest request)
-    {
-        var name = request.Name.Trim();
-        if (name.Length == 0) return "Chưa nhập tên kho.";
-        if (name.Length > 50) return "Tên kho tối đa 50 ký tự.";
-        if (request.Width < 0.5 || request.Width > 500) return "Chiều dài phải từ 0,5 đến 500 m.";
-        if (request.Depth < 0.5 || request.Depth > 500) return "Chiều rộng phải từ 0,5 đến 500 m.";
-        if (request.Height < 1 || request.Height > 50) return "Chiều cao trần phải từ 1 đến 50 m.";
-        if (request.GridSize < 0.05 || request.GridSize > 10) return "Bước lưới phải từ 0,05 đến 10 m.";
-        if (request.MinGap < 0 || request.MinGap > 20) return "Lối đi tối thiểu phải từ 0 đến 20 m.";
-        if (request.Margin < 0 || request.Margin > 2) return "Khoảng hở đỉnh phải từ 0 đến 2 m.";
-        return null;
-    }
+    public string? CheckNewRoom(CreateRoomRequest request) =>
+        PlacementValidator.CheckRoomValues(
+            request.Name, request.Width, request.Depth, request.Height, request.GridSize, request.MinGap, request.Margin);
 
     public RoomCreatedViewModel? CreateRoom(CreateRoomRequest request)
     {

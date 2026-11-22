@@ -32,12 +32,13 @@
           <label class="full">Tên phòng<input name="name" maxlength="50" required /></label>
           <label>Dài (m)<input type="number" name="width" min="0.5" step="any" required /></label>
           <label>Rộng (m)<input type="number" name="depth" min="0.5" step="any" required /></label>
+          <label>Cao trần (m)<input type="number" name="height" min="1" max="50" step="any" required /></label>
           <label>Lưới (m)<input type="number" name="gridSize" min="0.05" step="any" required /></label>
           <label>Lối đi tối thiểu (m)<input type="number" name="minGap" min="0" step="any" required /></label>
           <label>Khoảng hở đỉnh (m)<input type="number" name="margin" min="0" step="any" required /></label>
           <div class="form-actions"><button type="submit">Áp dụng</button></div>
         </form>
-        <p class="hint">Đổi lưới không làm kệ nào di chuyển. Thu nhỏ phòng hoặc tăng lối đi thì server kiểm tra lại mọi kệ khi lưu nháp.</p>
+        <p class="hint">Đổi lưới không làm kệ nào di chuyển. Thu nhỏ phòng, hạ trần hoặc tăng lối đi thì server kiểm tra lại mọi kệ khi lưu nháp.</p>
       </details>
 
       <!-- Phần đang chọn: hiện form của kệ, hoặc form của tường/cột, hoặc câu hướng dẫn -->

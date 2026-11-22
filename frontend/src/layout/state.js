@@ -59,7 +59,7 @@ export function rackToRequest(r) {
 /** Cả bản nháp thành dữ liệu gửi server. Đối tượng mới (Id âm) gửi id = null. */
 export function toLayoutRequest(room) {
   return {
-    name: room.name, width: room.width, depth: room.depth,
+    name: room.name, width: room.width, depth: room.depth, height: room.height,
     gridSize: room.gridSize, minGap: room.minGap, margin: room.margin,
     version: room.version,   // số phiên bản lúc tải: server so để biết có ai lưu trước mình không
     obstacles: room.obstacles.map((o) => ({
