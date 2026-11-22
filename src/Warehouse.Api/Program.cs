@@ -1,6 +1,10 @@
+<<<<<<< HEAD
 using Microsoft.EntityFrameworkCore;
 using Warehouse.Api.Data;
 using Warehouse.Api.Infrastructure;
+=======
+using Warehouse.Api.Data;
+>>>>>>> main
 using Warehouse.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -11,6 +15,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddOpenApi();
 
+<<<<<<< HEAD
 builder.Services.AddDbContext<WarehouseDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Warehouse")
         ?? throw new InvalidOperationException(
@@ -19,6 +24,11 @@ builder.Services.AddDbContext<WarehouseDbContext>(options =>
 // Service: controller chỉ biết interface, DI tự đưa bản cài đặt vào (mỗi request một bản, dùng chung DbContext của request đó).
 builder.Services.AddScoped<IRoomService, RoomService>();
 
+=======
+// Nối interface với lớp thật. Đổi nơi lưu dữ liệu chỉ cần sửa dòng IWarehouseStore (sau này: EfWarehouseStore).
+builder.Services.AddScoped<IWarehouseStore, SampleWarehouseStore>();
+builder.Services.AddScoped<IRoomService, RoomService>();
+>>>>>>> main
 var app = builder.Build();
 
 app.UseExceptionHandler();
