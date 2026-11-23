@@ -1,8 +1,9 @@
 import { formatMeters } from '../shared/format.js';
 import { showMessage } from '../shared/message.js';
 import {
-  addObstacle, addRack, clearPreview, moveRack, nextRackCode, previewRack, rackToRequest, removeObstacle, removeRack,
-  rotateRack, select, selectedObstacle, selectedRack, setShowGrid, setTool, snap, state, stopPreviewCheck,
+  addObstacle, addRack, addRacks, arrayRequests, clearPreview, moveRack, nextRackCode, previewRack, previewRackArray,
+  rackToRequest, removeObstacle, removeRack, rotateRack, select, selectedObstacle, selectedRack, setShowGrid, setTool,
+  snap, state, stopPreviewCheck,
 } from './state.js';
 
 // Canvas 2D: vẽ mặt bằng nhìn từ trên xuống bằng <canvas> và các công cụ chuột.
@@ -18,6 +19,7 @@ import {
 //   select      bấm để chọn kệ/vật cản; kéo kệ để dời (bóng mờ theo chuột, thả để đổi vị trí trong bản nháp);
 //               kéo chỗ trống để dời màn hình
 //   add-rack    bóng mờ kệ mới theo chuột, bấm để đặt (cấu hình lấy từ state.newRack, mã tự sinh)
+//   add-array   bóng mờ cả dãy kệ theo chuột (số hàng, số kệ mỗi hàng ở state.newArray), bấm để đặt cả dãy
 //   add-column  bấm để đặt cột 0,4 × 0,4 m
 // Phím: R xoay (đang kéo / đang đặt → xoay bóng; đang chọn kệ → xoay kệ thật), Esc huỷ, Delete xoá.
 
@@ -31,6 +33,7 @@ const COLUMN_SIZE = 0.4;    // m: cột đặt bằng chuột (muốn cỡ khác
 const HINTS = {
   select: 'Kéo kệ để dời · R xoay · Delete xoá kệ/cột đang chọn',
   'add-rack': 'Bấm để đặt · R xoay · Esc huỷ',
+  'add-array': 'Bấm để đặt cả dãy · R xoay · Esc huỷ',
   'add-column': 'Bấm để đặt cột · Esc huỷ',
 };
 
@@ -115,6 +118,7 @@ export function createCanvas(container, { onCursor } = {}) {
 
     if (state.tool === 'add-column' && hoverColumn) drawColumnGhost(hoverColumn, colors);
     if (state.preview) drawPreview(state.preview, colors);
+    if (state.arrayPreview) drawArrayPreview(state.arrayPreview, colors);
   }
 
   function drawGrid(room, colors, left, top, w, h) {
@@ -213,6 +217,39 @@ export function createCanvas(container, { onCursor } = {}) {
     if (p.isValid === false && p.reason) drawTag(p.reason, x, y - 6, edge);
   }
 
+  // Bóng mờ cả dãy: mỗi kệ một ô xám (đang chờ) / xanh / đỏ; lý do của kệ đỏ đầu tiên hiện trên kệ đó
+  function drawArrayPreview(a, colors) {
+    let tagged = false;
+    a.requests.forEach((r, i) => {
+      const c = a.results?.[i];
+      const x = toScreenX(r.x);
+      const y = toScreenY(r.y);
+      const w = (c?.footprintWidth ?? r.footprintWidth) * view.scale;
+      const h = (c?.footprintDepth ?? r.footprintDepth) * view.scale;
+      const [fill, edge] = !c
+        ? [colors.ghostPending, colors.ghostPendingEdge]
+        : c.isValid ? [colors.ghostOk, colors.ghostOkEdge] : [colors.ghostBad, colors.ghostBadEdge];
+
+      ctx.fillStyle = fill;
+      ctx.fillRect(x, y, w, h);
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      ctx.setLineDash([]);
+      drawLabel(r.code, x, y, w, h, edge);
+
+      if (c && !c.isValid && c.reason && !tagged) {
+        drawTag(`${r.code}: ${c.reason}`, x, y - 6, edge);
+        tagged = true;
+      }
+    });
+    // Không kệ nào đỏ nhưng bản nháp có lỗi chung (hoặc mất mạng): hiện lý do trên kệ đầu tiên
+    if (!tagged && a.reason && a.requests.length) {
+      drawTag(a.reason, toScreenX(a.requests[0].x), toScreenY(a.requests[0].y) - 6, colors.ghostBadEdge);
+    }
+  }
+
   function drawColumnGhost(c, colors) {
     ctx.fillStyle = colors.ghostPending;
     ctx.strokeStyle = colors.ghostPendingEdge;
@@ -298,6 +335,10 @@ export function createCanvas(container, { onCursor } = {}) {
       placeNewRack();
       return;
     }
+    if (state.tool === 'add-array') {
+      placeArray();
+      return;
+    }
     if (state.tool === 'add-column') {
       placeColumn(p);
       return;
@@ -319,6 +360,8 @@ export function createCanvas(container, { onCursor } = {}) {
     if (!gesture) {
       if (state.tool === 'add-rack') {
         updateNewRackPreview(p);
+      } else if (state.tool === 'add-array') {
+        updateArrayPreview(p);
       } else if (state.tool === 'add-column') {
         hoverColumn = { x: snap(p.x), y: snap(p.y) };
         draw();
@@ -440,6 +483,35 @@ export function createCanvas(container, { onCursor } = {}) {
     setTool('select');
   }
 
+  // ---------- đặt dãy kệ ----------
+  function updateArrayPreview(p) {
+    const x = snap(p.x);
+    const y = snap(p.y);
+    if (lastAddPos && lastAddPos.x === x && lastAddPos.y === y) return;
+    lastAddPos = { x, y };
+    previewRackArray(arrayRequests(x, y));
+  }
+
+  function placeArray() {
+    const a = state.arrayPreview;
+    if (!a) return;
+    if (a.results === null) {
+      showMessage('Đang kiểm tra dãy kệ, chờ một chút rồi bấm lại.', true);
+      return;
+    }
+    if (a.reason) {
+      showMessage(`Không đặt được dãy: ${a.reason}`, true);
+      return;
+    }
+    // Dùng kích thước chính thức server vừa trả cho từng kệ
+    addRacks(a.requests.map((r, i) => ({
+      ...r, footprintWidth: a.results[i].footprintWidth, footprintDepth: a.results[i].footprintDepth,
+    })));
+    lastAddPos = null;
+    clearPreview();
+    setTool('select');
+  }
+
   // ---------- đặt cột ----------
   function placeColumn(p) {
     addObstacle({ kind: 'Column', x: snap(p.x), y: snap(p.y), width: COLUMN_SIZE, depth: COLUMN_SIZE });
@@ -483,6 +555,13 @@ export function createCanvas(container, { onCursor } = {}) {
         const { x, y } = lastAddPos;
         lastAddPos = null;
         updateNewRackPreview({ x, y });
+      }
+    } else if (state.tool === 'add-array') {
+      state.newRack = { ...state.newRack, rotation: state.newRack.rotation === 90 ? 0 : 90 };
+      if (lastAddPos) {
+        const { x, y } = lastAddPos;
+        lastAddPos = null;
+        updateArrayPreview({ x, y });
       }
     } else if (state.tool === 'select' && selectedRack()) {
       rotateRack(selectedRack());   // xoay kệ thật tại chỗ (trong bản nháp)

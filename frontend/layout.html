@@ -87,6 +87,17 @@
           <div class="form-actions"><button type="button" id="btnPlaceRack">Đặt bằng chuột</button></div>
         </form>
         <p class="hint">Bấm "Đặt bằng chuột" rồi bấm lên mặt bằng; phím R để xoay, Esc để huỷ.</p>
+
+        <!-- Đặt nhiều kệ một lúc, cùng cấu hình kệ mới ở trên -->
+        <form id="newArrayForm" class="grid-form">
+          <label>Số hàng<input type="number" name="rows" min="1" step="1" data-int required /></label>
+          <label>Kệ mỗi hàng<input type="number" name="perRow" min="1" step="1" data-int required /></label>
+          <label>Khe trong hàng (m)<input type="number" name="gapAlong" min="0" step="any" required /></label>
+          <label>Lối đi giữa hàng (m)<input type="number" name="aisle" min="0" step="any" required /></label>
+          <p class="live full" id="arrayLive"></p>
+          <div class="form-actions"><button type="button" id="btnPlaceArray">Đặt dãy bằng chuột</button></div>
+        </form>
+        <p class="hint">Đặt cả dãy kệ cùng cấu hình ở trên: bấm "Đặt dãy bằng chuột" rồi bấm vào chỗ đặt kệ đầu tiên (góc trên trái). Khe và lối đi mặc định bằng lối đi tối thiểu của phòng.</p>
       </details>
 
       <!-- Tường, cột -->

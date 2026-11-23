@@ -26,6 +26,7 @@ const rackLive = $('rackLive');
 const obstaclePanel = $('obstaclePanel');
 const obstacleForm = $('obstacleForm');
 const newRackForm = $('newRackForm');
+const newArrayForm = $('newArrayForm');
 const addObstacleForm = $('addObstacleForm');
 
 // ---------- ô nhập của kệ: chèn từ <template> vào form sửa kệ và form kệ mới ----------
@@ -72,6 +73,12 @@ function drawAll() {
   if (!room) return;
   fillForm(roomForm, room);
   fillForm(newRackForm, state.newRack);
+  fillForm(newArrayForm, {
+    ...state.newArray,
+    gapAlong: state.newArray.gapAlong ?? room.minGap,   // chưa nhập thì theo lối đi tối thiểu của phòng
+    aisle: state.newArray.aisle ?? room.minGap,
+  });
+  drawArrayLive();
   $('nextRackCode').value = nextRackCode();
   drawSelected();
   drawRackList();
@@ -233,6 +240,28 @@ addObstacleForm.addEventListener('submit', function (event) {
 // Form kệ mới: lưu cấu hình để dùng khi đặt bằng chuột
 newRackForm.addEventListener('input', function () {
   state.newRack = { ...state.newRack, ...readForm(newRackForm) };
+});
+
+// Form đặt dãy: lưu số hàng, số kệ mỗi hàng, khe, lối đi để dùng khi đặt bằng chuột
+function drawArrayLive() {
+  const { rows, perRow } = state.newArray;
+  $('arrayLive').textContent = `Sẽ đặt ${rows} hàng × ${perRow} kệ = ${formatInt(rows * perRow)} kệ.`;
+}
+
+newArrayForm.addEventListener('input', function () {
+  const values = readForm(newArrayForm);
+  const next = { ...state.newArray };
+  if (values.rows >= 1) next.rows = values.rows;
+  if (values.perRow >= 1) next.perRow = values.perRow;
+  if (values.gapAlong >= 0 && newArrayForm.elements.gapAlong.value !== '') next.gapAlong = values.gapAlong;
+  if (values.aisle >= 0 && newArrayForm.elements.aisle.value !== '') next.aisle = values.aisle;
+  state.newArray = next;
+  drawArrayLive();
+});
+
+$('btnPlaceArray').addEventListener('click', function () {
+  clearPreview();
+  setTool('add-array');
 });
 
 $('btnPlaceRack').addEventListener('click', function () {

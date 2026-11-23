@@ -28,6 +28,12 @@ export const state = {
   preview: null,
   // Cấu hình kệ mới khi dùng công cụ "Đặt kệ". Mã kệ tự sinh lúc đặt.
   newRack: { rotation: 0, levels: 3, levelHeight: 1.2, bays: 4, bayWidth: 1.2, depth: 1.0, hasTop: true, maxWeight: 1000 },
+  // Đặt dãy kệ (công cụ 'add-array'): rows hàng × perRow kệ, mỗi kệ theo cấu hình newRack.
+  // gapAlong = khe giữa hai kệ cạnh nhau trong một hàng, aisle = lối đi giữa hai hàng; null = lấy lối đi tối thiểu của phòng.
+  newArray: { rows: 2, perRow: 3, gapAlong: null, aisle: null },
+  // Bóng mờ của cả dãy: { requests: [...kệ], results: null | [{ isValid, reason, footprintWidth, footprintDepth }], reason }
+  // results = null là đang chờ server trả lời.
+  arrayPreview: null,
 };
 
 // ---------- báo cho giao diện biết dữ liệu vừa đổi ----------
@@ -341,8 +347,82 @@ export function stopPreviewCheck() {
 export function clearPreview() {
   validateSeq++;
   clearTimeout(validateTimer);
-  if (state.preview) {
+  if (state.preview || state.arrayPreview) {
     state.preview = null;
+    state.arrayPreview = null;
     notify('preview');
   }
+}
+
+// ---------- đặt dãy kệ ----------
+
+/** count mã kệ mới liên tiếp: K(n+1), K(n+2)… với n là số lớn nhất đang có trong bản nháp. */
+export function nextRackCodes(count) {
+  const first = Number(nextRackCode().slice(1));
+  return Array.from({ length: count }, (_, i) => `K${first + i}`);
+}
+
+/**
+ * Các kệ của một dãy, góc trên trái của kệ đầu tiên ở (x, y). Hàng chạy theo trục X, các hàng xếp xuống theo trục Y.
+ * Ở đây phải tự tính chỗ chiếm của một kệ (dài = số ô × rộng ô, xoay 90° thì đổi chỗ dài và sâu, giống Rack.GetBounds ở
+ * server) để biết kệ sau đặt ở đâu. Đặt được hay không vẫn do server trả lời.
+ */
+export function arrayRequests(x, y) {
+  const rack = state.newRack;
+  const { rows, perRow } = state.newArray;
+  const gapAlong = state.newArray.gapAlong ?? state.room.minGap;
+  const aisle = state.newArray.aisle ?? state.room.minGap;
+  const length = rack.bays * rack.bayWidth;
+  const [width, depth] = rack.rotation === 90 ? [rack.depth, length] : [length, rack.depth];
+  const round = (v) => Number(v.toFixed(3));   // 0,1 × 3 ra 0,3 chứ không phải 0,30000000000000004
+
+  const codes = nextRackCodes(rows * perRow);
+  const requests = [];
+  for (let row = 0; row < rows; row++) {
+    for (let i = 0; i < perRow; i++) {
+      requests.push({
+        ...rack, productTypeId: null, code: codes[requests.length],
+        x: round(x + i * (width + gapAlong)), y: round(y + row * (depth + aisle)),
+        footprintWidth: width, footprintDepth: depth,   // tạm để vẽ bóng ngay; server trả số chính thức
+      });
+    }
+  }
+  return requests;
+}
+
+/** Hiện bóng mờ cả dãy rồi hỏi server POST /layout/validate một lần cho cả bản nháp có thêm các kệ này. */
+export function previewRackArray(requests) {
+  state.arrayPreview = { requests, results: null, reason: null };
+  notify('preview');
+
+  clearTimeout(validateTimer);
+  const seq = ++validateSeq;
+  validateTimer = setTimeout(async function () {
+    try {
+      const room = state.room;
+      const body = toLayoutRequest({ ...room, racks: [...room.racks, ...requests.map((r) => ({ ...r, id: null }))] });
+      const check = await sendJson('POST', `/api/rooms/${state.roomId}/layout/validate`, body);
+      if (seq !== validateSeq) return;
+      const results = requests.map((r) => {
+        const c = check.racks.find((x) => x.code.toLowerCase() === r.code.toLowerCase());
+        return c ?? { isValid: false, reason: check.reason, footprintWidth: r.footprintWidth, footprintDepth: r.footprintDepth };
+      });
+      // Lỗi chung của bản nháp (ví dụ tường ra ngoài phòng) cũng chặn việc đặt dãy
+      const firstBad = results.find((c) => !c.isValid);
+      state.arrayPreview = { requests, results, reason: firstBad?.reason ?? (check.isValid ? null : check.reason) };
+      notify('preview');
+    } catch (err) {
+      if (seq !== validateSeq) return;
+      state.arrayPreview = { requests, results: [], reason: err.message };
+      notify('preview');
+    }
+  }, VALIDATE_DELAY_MS);
+}
+
+/** Thêm cả dãy vào bản nháp bằng MỘT lần sửa: "Bỏ thay đổi" huỷ được cả dãy. */
+export function addRacks(requests) {
+  const created = requests.map((r) => ({ ...r, id: newTempId(), slotCount: null }));
+  edit((room) => room.racks.push(...created));
+  select(null, null);
+  showMessage(`Đã đặt ${created.length} kệ (${created[0].code}–${created.at(-1).code}) trong bản nháp (chưa lưu).`);
 }
