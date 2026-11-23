@@ -6,7 +6,7 @@ import { escapeHtml } from '../shared/format.js';
 import { showMessage } from '../shared/message.js';
 import { readRoomId, showRoomTabs, showTopBar } from '../shared/nav.js';
 import { bayFootprint, rackPoint } from '../shared/rackGeometry.js';
-import { slotWorldPosition } from '../shared/slotPosition.js';
+import { levelsOf, slotWorldPosition } from '../shared/slotPosition.js';
 
 // Trang Kho 3D (warehouse3d.html?roomId=1).
 //
@@ -34,11 +34,8 @@ const PRODUCT_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '
 const UNCLASSIFIED = '#9aa3b2';
 const productColor = (id) => (id == null ? UNCLASSIFIED : PRODUCT_COLORS[(id - 1) % PRODUCT_COLORS.length]);
 
-// ---------- các phần tử trên trang ----------
 const view = document.getElementById('view');
 const slotInfo = document.getElementById('slotInfo');
-
-// ---------- biến nhớ ----------
 const roomId = readRoomId();
 let room = null;                 // dữ liệu phòng từ server
 let slots = [];                  // dữ liệu khung từ server
@@ -51,7 +48,6 @@ let speed = 1;                   // tốc độ hiệu ứng (×1, ×2…)
 
 showTopBar('rooms');
 
-// =============== 1. DỰNG CẢNH TRỐNG ===============
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#eef1f5');
 
@@ -81,7 +77,6 @@ function resize() {
 new ResizeObserver(resize).observe(view);
 resize();
 
-// Vòng vẽ: mỗi khung hình vẽ lại một lần (~60 lần/giây)
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(function () {
   const seconds = Math.min(0.1, clock.getDelta()) * speed;   // tab ẩn lâu rồi quay lại: không nhảy cóc cả chục giây
@@ -89,29 +84,31 @@ renderer.setAnimationLoop(function () {
   controls.update();
   renderer.render(scene, camera);
 });
-
-// =============== 2. TẢI DỮ LIỆU RỒI VẼ ===============
 start();
-
 async function start() {
   if (roomId == null) {
     document.getElementById('roomName').textContent = 'Thiếu roomId trên địa chỉ trang.';
     return;
   }
   showRoomTabs(roomId, 'warehouse3d');
+  document.getElementById('linkReceive').href = `receive.html?roomId=${roomId}`;
   try {
-    room = await getJson(`/api/rooms/${roomId}`);          // phòng + kệ + tường/cột
-    slots = await getJson(`/api/rooms/${roomId}/slots`);   // mọi khung (+ pallet)
+    room = await getJson(`/api/room3d/${roomId}`);          // phòng + kệ + tường/cột
+    slots = await getJson(`/api/room3d/${roomId}/slots`);   // mọi khung (+ pallet)
     document.getElementById('roomTitle').textContent = room.name;
-
     drawFloor();
-    room.obstacles.forEach(drawObstacle);
+    (room.obstacles ?? []).forEach(drawObstacle);   // API room3d hiện chưa trả tường/cột
     room.racks.forEach(drawRack);
     drawSlots();
     pointCamera();
     drawSummary();
 
-    // Vừa nhập lô xong và bấm "Xem 3D": cho pallet bay vào (một lần)
+    // Vừa bấm "Xếp và xem 3D": báo kết quả xếp và cho pallet bay vào (một lần)
+    const note = readSession(`note:${roomId}`);
+    if (note) {
+      removeSession(`note:${roomId}`);
+      showMessage(note);
+    }
     if (readSession(`play:${roomId}`)) {
       removeSession(`play:${roomId}`);
       replay();
@@ -122,9 +119,7 @@ async function start() {
   }
 }
 
-// =============== 3. CÁC HÀM VẼ ===============
 
-// Vẽ một hộp, đặt theo TÂM (Three.js luôn đặt hình theo tâm)
 function drawBox(centerX, centerY, centerZ, sizeX, sizeY, sizeZ, color, opacity = 1) {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(sizeX, sizeY, sizeZ),
@@ -143,7 +138,6 @@ function addEdges(mesh, color) {
   ));
 }
 
-// Sàn: tấm phẳng, góc (0,0) của phòng nằm ở gốc toạ độ
 function drawFloor() {
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(room.width, room.depth),
@@ -167,11 +161,10 @@ function drawObstacle(o) {
   const color = o.kind === 'Wall' ? '#3b4252' : '#8b93a5';
   drawBox(o.x + o.width / 2, WALL_HEIGHT / 2, o.y + o.depth / 2, o.width, WALL_HEIGHT, o.depth, color);
 }
-
-// Khung sắt kệ: thanh đứng ở mỗi ranh giới ô (trước + sau), tấm ngang ở mỗi tầng
 function drawRack(rack) {
   const length = rack.bays * rack.bayWidth;           // chiều dài kệ
-  const height = rack.levels * rack.levelHeight;      // chiều cao tới tấm ngang trên cùng
+  const levels = levelsOf(rack);                      // đáy và chiều cao từng tầng (tầng có thể cao khác nhau)
+  const height = levels.top;                          // chiều cao tới tấm ngang trên cùng
 
   for (let i = 0; i <= rack.bays; i++) {
     for (const v of [0, rack.depth]) {
@@ -183,8 +176,8 @@ function drawRack(rack) {
   // Tấm ngang: tầng 0 là đáy, tầng cuối là tấm trên cùng (đáy của nóc nếu có)
   const a = rackPoint(rack, 0, 0);                  // một góc kệ
   const b = rackPoint(rack, length, rack.depth);    // góc đối diện
-  for (let level = 0; level <= rack.levels; level++) {
-    drawBox((a.x + b.x) / 2, level * rack.levelHeight, (a.z + b.z) / 2,
+  for (const y of [...levels.bottoms, levels.top]) {
+    drawBox((a.x + b.x) / 2, y, (a.z + b.z) / 2,
       Math.abs(b.x - a.x), BOARD, Math.abs(b.z - a.z), '#9db8f0');
   }
 }
@@ -194,18 +187,17 @@ function palletColor(slot) {
   return colorMode === 'product' ? productColor(slot.productTypeId) : (slot.color ?? '#999999');
 }
 
-// Ô khung + pallet
 function drawSlots() {
   for (const slot of slots) {
-    const rack = room.racks.find((r) => r.id === slot.rackId);   // khung thuộc kệ nào
+    const rack = room.racks.find((r) => r.id === slot.rackId);   
     if (!rack) continue;
 
-    const center = slotWorldPosition(rack, slot);         // tâm ô khung (m)
-    const size = bayFootprint(rack);                      // kích thước ô theo x, z (đã tính xoay)
-    const bottom = (slot.level - 1) * rack.levelHeight;   // độ cao đáy tầng
+    const center = slotWorldPosition(rack, slot);
+    const size = bayFootprint(rack);
+    const level = levelsOf(rack).byNumber.get(slot.level) ?? { bottom: 0, height: 0 };
+    const bottom = level.bottom;
 
-    // Ô khung: hộp xanh trong suốt. Nóc không giới hạn cao nên chỉ là tấm mỏng.
-    const frameHeight = slot.isTop ? TOP_PLATE : rack.levelHeight * SHRINK;
+    const frameHeight = slot.isTop ? TOP_PLATE : level.height * SHRINK;
     const frameBottom = slot.isTop ? bottom + BOARD / 2 : bottom;
     const frame = drawBox(center.x, frameBottom + frameHeight / 2, center.z,
       size.sizeX * SHRINK, frameHeight, size.sizeZ * SHRINK, '#2563eb', slot.isTop ? 0.15 : 0.07);
@@ -216,7 +208,7 @@ function drawSlots() {
     if (slot.palletId != null) {
       const along = slot.palletAlongBay ?? rack.bayWidth * SHRINK;    // dọc ô
       const across = slot.palletAcrossDepth ?? rack.depth * SHRINK;   // theo chiều sâu kệ
-      const height = slot.palletHeight ?? rack.levelHeight * SHRINK;
+      const height = slot.palletHeight ?? level.height * SHRINK;
       const sizeX = rack.rotation === 90 ? across : along;            // kệ xoay thì đổi chỗ
       const sizeZ = rack.rotation === 90 ? along : across;
       const palletBottom = bottom + BOARD / 2 + (slot.isTop ? TOP_PLATE : 0);
@@ -231,7 +223,6 @@ function drawSlots() {
   }
 }
 
-// Camera nhìn chéo xuống giữa phòng
 function pointCamera() {
   const size = Math.max(room.width, room.depth);
   controls.target.set(room.width / 2, 0, room.depth / 2);
@@ -240,7 +231,6 @@ function pointCamera() {
   camera.updateProjectionMatrix();
 }
 
-// =============== 4. BẢNG THÔNG TIN, MÀU, CHÚ GIẢI ===============
 function drawSummary() {
   const filled = slots.filter((s) => s.palletId != null).length;
   document.getElementById('roomName').textContent = room.name;
@@ -249,7 +239,6 @@ function drawSummary() {
   drawLegend();
 }
 
-// Chú giải: mỗi type (hoặc loại hàng) đang có trong kho một ô màu
 function drawLegend() {
   const items = new Map();   // khoá → [màu, tên]
   for (const slot of slots) {
@@ -267,7 +256,6 @@ function drawLegend() {
   for (const chip of legend.querySelectorAll('i')) chip.style.background = chip.dataset.color;
 }
 
-// Đổi chế độ màu: chỉ tô lại các khối pallet đang có, không gọi server
 function setColorMode(mode) {
   colorMode = mode;
   document.getElementById('btnColorSize').setAttribute('aria-pressed', String(mode === 'size'));

@@ -5,22 +5,22 @@ function link(href, text, isActive) {
   return `<a href="${href}"${isActive ? ' class="active"' : ''}>${text}</a>`;
 }
 
-// Thanh trên cùng: active = 'rooms' (Kho hàng) hoặc 'receive' (Nhập lô hàng)
+// Thanh trên cùng. Nhập lô không nằm ở đây: phải vào một kho rồi mới nhập (tab trong kho).
 export function showTopBar(active) {
   document.getElementById('topbar').innerHTML = `
     <strong class="brand">WarehouseTwin</strong>
     <nav class="tabs">
-      ${link('index.html', 'Kho hàng (mặt bằng, 3D)', active === 'rooms')}
-      ${link('receive.html', 'Nhập lô hàng', active === 'receive')}
+      ${link('index.html', 'Kho hàng (mặt bằng, 3D, nhập lô)', active === 'rooms')}
     </nav>
   `;
 }
 
-// Hai tab trong một kho: active = 'layout' (Mặt bằng) hoặc 'warehouse3d' (Kho 3D)
+// Ba tab trong một kho: active = 'layout' (Mặt bằng), 'warehouse3d' (Kho 3D) hoặc 'receive' (Nhập lô)
 export function showRoomTabs(roomId, active) {
   document.getElementById('roomTabs').innerHTML = `
     ${link(`layout.html?roomId=${roomId}`, 'Mặt bằng', active === 'layout')}
     ${link(`warehouse3d.html?roomId=${roomId}`, 'Kho 3D', active === 'warehouse3d')}
+    ${link(`receive.html?roomId=${roomId}`, 'Nhập lô', active === 'receive')}
   `;
 }
 

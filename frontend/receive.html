@@ -10,11 +10,17 @@
 <body>
   <header class="topbar" id="topbar"></header>
 
+  <div class="room-header">
+    <a class="btn" href="index.html">← Danh sách kho</a>
+    <strong id="roomTitle"></strong>
+    <nav class="tabs" id="roomTabs"></nav>
+  </div>
+
   <main class="page-content">
-    <h1>Nhập lô hàng</h1>
+    <h1>Nhập lô vào kho <span id="roomName">…</span></h1>
     <p class="hint">
-      Lập lô trước: mỗi dòng là một nhóm pallet cùng số đo (dài, rộng, cao bằng mét; kg có thể để trống).
-      Type A, B… do hệ thống tự khớp hoặc tạo. Bấm "Kiểm tra các kho" để xem kho nào nhận được.
+      Mỗi dòng là một nhóm pallet cùng số đo (dài, rộng, cao bằng mét; kg có thể để trống).
+      Type A, B… do hệ thống tự khớp hoặc tạo. Bấm "Kiểm tra kho" để xem kho này nhận được bao nhiêu.
     </p>
 
     <!-- Các dòng nhập: JS thêm/xoá hàng trong <tbody> -->
@@ -38,7 +44,7 @@
       <button type="button" id="btnSample">Lô ví dụ 6A + 2B</button>
       <button type="button" id="btnB36">Lô b36 (bài test)</button>
       <button type="button" id="btnRandom">Sinh ngẫu nhiên 30 pallet</button>
-      <button type="button" id="btnCheck" class="primary">Kiểm tra các kho</button>
+      <button type="button" id="btnCheck" class="primary">Kiểm tra kho</button>
     </div>
 
     <div id="checkResult"></div>   <!-- kết quả kiểm tra -->

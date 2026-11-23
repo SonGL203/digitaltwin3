@@ -14,7 +14,6 @@ const roomCount = document.getElementById('roomCount');
 const roomForm = document.getElementById('roomForm');
 const formError = document.getElementById('formError');
 const emptyHint = document.getElementById('emptyHint');
-const linkReceive = document.getElementById('linkReceive');
 const btnOpenForm = document.getElementById('btnOpenForm');
 const btnCloseForm = document.getElementById('btnCloseForm');
 
@@ -49,7 +48,6 @@ function drawRooms() {
   // Chưa có kho nào: mở sẵn form (việc đầu tiên cần làm là tạo kho), ẩn nút Nhập lô
   const noRooms = rooms.length === 0;
   emptyHint.hidden = !noRooms;
-  linkReceive.hidden = noRooms;
   if (noRooms) openForm();
 }
 
