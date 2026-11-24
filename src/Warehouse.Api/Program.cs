@@ -10,6 +10,10 @@ builder.Services.AddScoped<IWarehouseStore, PostgresWarehouseStore>();
 builder.Services.AddScoped<ILayoutStore, PostgresLayoutStore>();
 builder.Services.AddScoped<IRoomService, RoomService>();
 builder.Services.AddScoped<ILayoutService, LayoutService>();
+builder.Services.AddScoped<IWarehouse3D, Warehouse3D>();
+builder.Services.AddScoped<IRoom3DService, Room3DService>();
+builder.Services.AddScoped<IBatchStore, BatchStore>();
+builder.Services.AddScoped<IBatchService, BatchService>();
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())

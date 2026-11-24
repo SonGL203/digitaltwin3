@@ -2,22 +2,23 @@ import { getJson, sendJson } from '../shared/api.js';
 import { askConfirm } from '../shared/dialog.js';
 import { escapeHtml } from '../shared/format.js';
 import { showMessage } from '../shared/message.js';
-import { showTopBar } from '../shared/nav.js';
+import { readRoomId, showRoomTabs, showTopBar } from '../shared/nav.js';
 
-// Trang Nhập lô hàng (receive.html). LẬP LÔ TRƯỚC, CHỌN KHO SAU.
+// Trang Nhập lô (receive.html?roomId=1). Vào một kho rồi mới nhập lô vào đúng kho đó.
 //
 // Luồng:
+//  0. Mở trang: GET /api/room3d/{roomId} lấy tên kho; thiếu roomId hoặc không có kho → báo lỗi, khoá nút kiểm tra.
 //  1. Người dùng nhập các dòng (số lượng + số đo).
-//  2. "Kiểm tra các kho"  → POST /api/batches/check   (không ghi gì; server báo từng kho nhận được bao nhiêu)
-//  3. Có 2 cách nhập:
-//       "Nhập theo đề xuất"  → POST /api/batches  rồi  POST /api/batches/{id}/distribute
-//       "Nhập vào kho này"   → POST /api/batches  rồi  POST /api/rooms/{roomId}/batches/{id}/allocate
-//     Nhập lô và xếp là HAI bước riêng: nếu bước xếp lỗi thì lô vẫn đã nhập, bấm "Xếp lại" (không xếp đôi).
-//  4. Bảng kết quả: mỗi kho nhận bao nhiêu, nút "Xem 3D" mở kho đó và cho pallet bay vào.
+//  2. "Kiểm tra kho"     → POST /api/rooms/{roomId}/batches/check   (không ghi gì; server báo kho nhận được bao nhiêu)
+//  3. "Nhập vào kho này" → POST /api/batches   (chỉ tạo lô + pallet, CHƯA xếp vào khung)
+//  4. "Xếp và xem 3D"    → POST /api/rooms/{roomId}/batches/{id}/allocate, xong thì mở màn 3D cho pallet bay vào.
+//     Xếp lỗi thì lô vẫn đã nhập, bấm lại nút này (pallet đã vào khung không bị xếp đôi).
 //
 // Trang này không tự chọn kho hay khung, không tự đếm chỗ: mọi con số do server trả.
 
-showTopBar('receive');
+showTopBar('rooms');
+const roomId = readRoomId();   // receive.html?roomId=3 → 3; không có → null
+let roomName = '';             // tên kho, lấy lúc mở trang
 
 // ---------- dữ liệu mẫu ----------
 const SAMPLE = [   // lô 6A + 2B: 6 pallet thấp, 2 pallet cao chỉ lên được nóc
@@ -40,12 +41,34 @@ const typeForm = document.getElementById('typeForm');
 // ---------- biến nhớ ----------
 let productTypes = [];   // loại hàng, để đổ vào ô chọn
 let lastCheck = null;    // kết quả kiểm tra gần nhất
-let outcome = null;      // { batch, mode, result }: lô vừa nhập. mode = 'auto' hoặc { roomId, roomName }. result = null nếu chưa xếp được
+let outcome = null;      // { batch }: lô vừa nhập, chờ bấm "Xếp và xem 3D"
 let busy = false;        // đang chờ server: không cho bấm thêm
 
 // ---------- 1. Mở trang ----------
 addLines(LOT_B36);   // điền sẵn lô b36
+loadRoom();
 loadProductTypes();
+
+// Lấy tên kho. Thiếu roomId hoặc không có kho thì báo lỗi và khoá nút kiểm tra.
+async function loadRoom() {
+  const btnCheck = document.getElementById('btnCheck');
+  if (roomId == null) {
+    document.getElementById('roomName').textContent = '(thiếu roomId trên địa chỉ trang)';
+    btnCheck.disabled = true;
+    return;
+  }
+  showRoomTabs(roomId, 'receive');
+  try {
+    const room = await getJson(`/api/room3d/${roomId}`);
+    roomName = room.name;
+    document.getElementById('roomName').textContent = room.name;
+    document.getElementById('roomTitle').textContent = room.name;
+  } catch (err) {
+    document.getElementById('roomName').textContent = '(không mở được)';
+    btnCheck.disabled = true;
+    showMessage(err.message, true);
+  }
+}
 
 async function loadProductTypes() {
   try {
@@ -166,17 +189,17 @@ async function run(work) {
   }
 }
 
-// ---------- 5. Kiểm tra các kho ----------
+// ---------- 5. Kiểm tra kho ----------
 document.getElementById('btnCheck').addEventListener('click', function () {
   run(async function () {
     outcome = null;
-    lastCheck = await sendJson('POST', '/api/batches/check', readBatchRequest());
+    lastCheck = await sendJson('POST', `/api/rooms/${roomId}/batches/check`, readBatchRequest());
     drawCheck();
   });
 });
 
 // lastCheck: { total, lines: [{typeCode, color, isNewType, quantity, length, width, height}],
-//              rooms: [{roomId, roomName, placeable, missing, notes}], plan: {total, placed, rooms: [{roomName, count}]} }
+//              placeable, missing, notes: [câu lý do] }
 function drawCheck() {
   const check = lastCheck;
 
@@ -187,151 +210,75 @@ function drawCheck() {
       <td class="muted">${l.length} × ${l.width} × ${l.height} m</td>
     </tr>`).join('');
 
-  const roomRows = check.rooms.map((r) => `
-    <tr class="${r.missing ? 'bad' : ''}">
-      <td>${escapeHtml(r.roomName)}</td>
-      <td>${r.placeable} / ${check.total}</td>
-      <td>${r.missing
-        ? `Thiếu ${r.missing} ô${r.notes.length ? `<br><span class="muted">${r.notes.map(escapeHtml).join('<br>')}</span>` : ''}`
-        : 'Đủ điều kiện'}</td>
-      <td><button type="button" data-room-id="${r.roomId}" ${r.placeable === 0 ? 'disabled' : ''}>Nhập vào kho này</button></td>
-    </tr>`).join('');
-
-  const plan = check.plan;
-  const missing = plan.total - plan.placed;
-  const planRows = plan.rooms.map((r) => `<tr><td>${escapeHtml(r.roomName)}</td><td>${r.count} pallet</td></tr>`).join('');
+  const notes = check.notes.length ? `<br><span class="muted">${check.notes.map(escapeHtml).join('<br>')}</span>` : '';
 
   checkResult.innerHTML = `
     <h3>Lô gồm ${check.total} pallet</h3>
     <table><thead><tr><th>Type</th><th>SL</th><th>Số đo</th></tr></thead><tbody>${typeRows}</tbody></table>
 
-    <h3>Từng kho (nếu nhận riêng cả lô)</h3>
-    ${check.rooms.length
-      ? `<table><thead><tr><th>Kho</th><th>Nhận được</th><th>Kết quả</th><th></th></tr></thead><tbody>${roomRows}</tbody></table>`
-      : '<p class="warn">Chưa có kho nào. Tạo kho ở trang Danh sách kho trước.</p>'}
-
-    <h3>Đề xuất của hệ thống</h3>
-    <p class="hint">Ưu tiên kho đã có hàng cùng type; kho chứa được hết thì không chia; không kho nào đủ thì chia ra nhiều kho.</p>
-    ${plan.rooms.length ? `<table><thead><tr><th>Kho</th><th>Số pallet</th></tr></thead><tbody>${planRows}</tbody></table>` : ''}
-    <p class="${missing ? 'warn' : 'ok'}">${missing
-      ? `Theo đề xuất vẫn thiếu ${missing} ô: ${missing} pallet sẽ ở lại trong lô, chưa có khung.`
-      : 'Theo đề xuất: đủ chỗ cho cả lô.'}</p>
-    <button type="button" class="primary" id="btnAuto" ${plan.placed === 0 ? 'disabled' : ''}>Nhập theo đề xuất</button>
+    <h3>Kho ${escapeHtml(roomName)}</h3>
+    <p class="${check.missing ? 'warn' : 'ok'}">Nhận được ${check.placeable} / ${check.total} pallet.
+      ${check.missing ? `Thiếu ${check.missing} ô.${notes}` : 'Đủ chỗ cho cả lô.'}</p>
+    <button type="button" class="primary" id="btnImport" ${check.placeable === 0 ? 'disabled' : ''}>Nhập vào kho này</button>
   `;
 
   // Tô màu cho các ô vuông type (màu lấy từ server, đặt bằng JS để HTML không chứa style)
   for (const chip of checkResult.querySelectorAll('.chip')) chip.style.background = chip.dataset.color;
 
-  // Gắn sự kiện cho các nút vừa vẽ
-  document.getElementById('btnAuto').addEventListener('click', importAuto);
-  for (const button of checkResult.querySelectorAll('[data-room-id]')) {
-    button.addEventListener('click', () => importIntoRoom(Number(button.dataset.roomId)));
-  }
+  document.getElementById('btnImport').addEventListener('click', importBatch);
 }
 
 // ---------- 6. Nhập lô ----------
 
-// Nhập theo đề xuất: lập lô rồi để server chia ra các kho
-function importAuto() {
-  run(async function () {
-    const batch = await sendJson('POST', '/api/batches', readBatchRequest());   // { batchId, code, palletCount }
-    outcome = { batch: batch, mode: 'auto', result: null };
-    clearCheck();
-    // Nếu dòng dưới lỗi: lô đã nhập rồi, màn hình sẽ hiện nút "Xếp lại"
-    outcome.result = await sendJson('POST', `/api/batches/${batch.batchId}/distribute`);
-    showMessage(`Đã nhập lô ${batch.code}: ${outcome.result.placed} / ${batch.palletCount} pallet vào ${outcome.result.rooms.length} kho.`);
-  });
-}
-
-// Nhập vào một kho do người dùng chọn. Kho thiếu chỗ thì hỏi lại (phần thiếu ở lại trong lô).
-async function importIntoRoom(roomId) {
-  const room = lastCheck.rooms.find((r) => r.roomId === roomId);
-  if (room.missing) {
+// Nhập lô vào kho đang mở. Kho thiếu chỗ thì hỏi lại (phần thiếu ở lại trong lô).
+async function importBatch() {
+  if (lastCheck.missing) {
     const ok = await askConfirm(
-      `Kho ${room.roomName} thiếu ${room.missing} ô: ${room.missing} pallet sẽ ở lại trong lô, chưa có khung. Vẫn nhập vào kho này?`,
+      `Kho ${roomName} thiếu ${lastCheck.missing} ô: ${lastCheck.missing} pallet sẽ ở lại trong lô, chưa có khung. Vẫn nhập vào kho này?`,
       { okText: 'Vẫn nhập' });
     if (!ok) return;
   }
   run(async function () {
-    const batch = await sendJson('POST', '/api/batches', readBatchRequest());
-    const mode = { roomId: roomId, roomName: room.roomName };
-    outcome = { batch: batch, mode: mode, result: null };
+    const batch = await sendJson('POST', '/api/batches', readBatchRequest());   // { batchId, code, palletCount }
+    outcome = { batch: batch };
     clearCheck();
-    outcome.result = await allocateInto(mode, batch);
-    showMessage(`Đã nhập lô ${batch.code} vào kho ${room.roomName}.`);
+    showMessage(`Đã nhập lô ${batch.code} (${batch.palletCount} pallet). Bấm "Xếp và xem 3D" để xếp vào khung.`);
   });
 }
 
-// Xếp lại khi bước xếp bị lỗi (pallet nào đã vào khung thì không bị xếp đôi)
-function retryAllocate() {
-  run(async function () {
-    const { batch, mode } = outcome;
-    outcome.result = mode === 'auto'
-      ? await sendJson('POST', `/api/batches/${batch.batchId}/distribute`)
-      : await allocateInto(mode, batch);
-  });
-}
-
-// Xếp vào một kho. API này trả dạng khác với "distribute", nên đổi về cùng dạng để vẽ chung.
-async function allocateInto(mode, batch) {
-  const allocation = await sendJson('POST', `/api/rooms/${mode.roomId}/batches/${batch.batchId}/allocate`);
-  const count = allocation.placements.length;
-  return {
-    total: batch.palletCount,
-    placed: count,
-    rooms: count ? [{ roomId: mode.roomId, roomName: mode.roomName, count: count, placements: allocation.placements }] : [],
-    rejected: allocation.rejected,
-  };
-}
-
-// ---------- 7. Kết quả sau khi nhập ----------
+// ---------- 7. Lô vừa nhập: nút "Xếp và xem 3D" ----------
 function drawOutcome() {
   if (!outcome) {
     outcomeBox.innerHTML = '';
     return;
   }
-  const { batch, result } = outcome;
-
-  // Đã nhập lô nhưng bước xếp lỗi
-  if (!result) {
-    outcomeBox.innerHTML = `
-      <h3>Lô ${escapeHtml(batch.code)} đã nhập (${batch.palletCount} pallet) nhưng chưa xếp</h3>
-      <p class="warn">Việc xếp bị lỗi. Bấm xếp lại: pallet nào đã vào khung sẽ không bị xếp đôi.</p>
-      <button type="button" class="primary" id="btnRetry">Xếp lại lô ${escapeHtml(batch.code)}</button>
-    `;
-    document.getElementById('btnRetry').addEventListener('click', retryAllocate);
-    return;
-  }
-
-  const roomRows = result.rooms.map((r) => `
-    <tr>
-      <td>${escapeHtml(r.roomName)}</td>
-      <td>${r.count} pallet</td>
-      <td><button type="button" class="primary" data-view-room="${r.roomId}">Xem 3D</button></td>
-    </tr>`).join('');
-  const rejectedRows = result.rejected.map((r) => `<tr class="bad"><td>${escapeHtml(r.palletCode)}</td><td>${escapeHtml(r.reason)}</td></tr>`).join('');
-
+  const { batch } = outcome;
   outcomeBox.innerHTML = `
-    <h3>Lô ${escapeHtml(batch.code)}: đã xếp ${result.placed} / ${batch.palletCount} pallet</h3>
-    ${result.rooms.length ? `<table><thead><tr><th>Kho</th><th>Nhận</th><th></th></tr></thead><tbody>${roomRows}</tbody></table>` : ''}
-    ${rejectedRows ? `<p class="warn">Chưa có khung (vẫn thuộc lô, thêm kệ rồi xếp lại sau):</p><table><tbody>${rejectedRows}</tbody></table>` : ''}
+    <h3>Lô ${escapeHtml(batch.code)} đã nhập (${batch.palletCount} pallet), chưa xếp vào khung</h3>
+    <button type="button" class="primary" id="btnAllocate">Xếp và xem 3D</button>
   `;
-  for (const button of outcomeBox.querySelectorAll('[data-view-room]')) {
-    button.addEventListener('click', () => viewRoom(Number(button.dataset.viewRoom)));
-  }
+  document.getElementById('btnAllocate').addEventListener('click', allocateAndView);
 }
 
-// Sang trang Kho 3D của kho đó. Danh sách pallet vừa xếp được cất vào sessionStorage để trang 3D cho pallet bay vào
-// đúng thứ tự server đã xếp (sessionStorage: dữ liệu tạm của tab trình duyệt, chuyển trang vẫn còn).
-function viewRoom(roomId) {
-  const room = outcome.result.rooms.find((r) => r.roomId === roomId);
-  try {
-    sessionStorage.setItem(`placements:${roomId}`, JSON.stringify(room.placements));
-    sessionStorage.setItem(`play:${roomId}`, '1');
-  } catch {
-    // không có sessionStorage: vẫn sang được, chỉ không có hiệu ứng bay
-  }
-  location.href = `warehouse3d.html?roomId=${roomId}`;
+// Xếp lô vào kho đang mở rồi sang màn 3D. Lỗi thì ở lại trang này (run báo lỗi), bấm lại được: không xếp đôi.
+// Danh sách pallet vừa xếp cất vào sessionStorage để màn 3D cho pallet bay vào đúng thứ tự server đã xếp
+// (sessionStorage: dữ liệu tạm của tab trình duyệt, chuyển trang vẫn còn).
+function allocateAndView() {
+  run(async function () {
+    const allocation = await sendJson('POST', `/api/rooms/${roomId}/batches/${outcome.batch.batchId}/allocate`);
+    const placed = allocation.placements.length;
+    const rejected = allocation.rejected.length;
+    try {
+      sessionStorage.setItem(`placements:${roomId}`, JSON.stringify(allocation.placements));
+      sessionStorage.setItem(`play:${roomId}`, '1');
+      sessionStorage.setItem(`note:${roomId}`, rejected
+        ? `Lô ${outcome.batch.code}: đã xếp ${placed} pallet, ${rejected} pallet chưa có khung (${allocation.rejected[0].reason})`
+        : `Lô ${outcome.batch.code}: đã xếp ${placed} pallet.`);
+    } catch {
+      // không có sessionStorage: vẫn sang được, chỉ không có hiệu ứng bay
+    }
+    location.href = `warehouse3d.html?roomId=${roomId}`;
+  });
 }
 
 // ---------- 8. Thêm loại hàng ----------
