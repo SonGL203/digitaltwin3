@@ -156,6 +156,17 @@
     <label>Sâu (m)<input type="number" name="depth" min="0.1" step="any" required /></label>
     <label>Tải khung (kg)<input type="number" name="maxWeight" min="1" step="any" required /></label>
     <label class="check"><input type="checkbox" name="hasTop" /> Có nóc</label>
+    <!-- Loại hàng của kệ: kệ gắn loại nào thì khi nhập lô chỉ xếp pallet loại đó; để trống = nhận pallet chưa phân loại -->
+    <div class="full type-pick">
+      <label>Loại hàng<select name="productTypeId" data-int-or-null></select></label>
+      <button type="button" class="icon" data-type-open title="Thêm loại hàng mới">+</button>
+    </div>
+    <div class="full type-new" hidden>
+      <input data-type-code placeholder="Mã (OV)" maxlength="20" />
+      <input data-type-name placeholder="Tên (Ốc vít)" maxlength="50" />
+      <button type="button" class="primary" data-type-save>Thêm</button>
+      <button type="button" data-type-cancel>Huỷ</button>
+    </div>
   </template>
 
   <script type="module" src="/src/pages/layout.js"></script>

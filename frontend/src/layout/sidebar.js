@@ -1,7 +1,8 @@
 import { escapeHtml, formatInt, formatMeters } from '../shared/format.js';
+import { showMessage } from '../shared/message.js';
 import {
-  addObstacle, clearPreview, discardDraft, nextRackCode, previewRack, rackToRequest, removeObstacle, removeRack,
-  saveDraft, select, selectedObstacle, selectedRack, setTool, state, updateObstacle, updateRack, updateRoom,
+  addObstacle, clearPreview, createProductType, discardDraft, nextRackCode, previewRack, rackToRequest, removeObstacle,
+  removeRack, saveDraft, select, selectedObstacle, selectedRack, setTool, state, updateObstacle, updateRack, updateRoom,
 } from './state.js';
 
 // Bảng bên trái. Các ô nhập đã viết sẵn trong layout.html; file này chỉ:
@@ -42,7 +43,7 @@ function fillForm(form, values) {
   for (const element of form.elements) {
     if (!element.name || !(element.name in values)) continue;
     if (element.type === 'checkbox') element.checked = Boolean(values[element.name]);
-    else element.value = values[element.name];
+    else element.value = values[element.name] ?? '';   // null (ví dụ chưa gắn loại hàng) → ô trống
   }
 }
 
@@ -52,6 +53,7 @@ function readForm(form) {
   for (const element of form.elements) {
     if (!element.name || element.disabled) continue;
     if (element.type === 'checkbox') values[element.name] = element.checked;
+    else if (element.hasAttribute('data-int-or-null')) values[element.name] = element.value === '' ? null : parseInt(element.value, 10);
     else if (element.hasAttribute('data-int')) values[element.name] = parseInt(element.value, 10);
     else if (element.type === 'number') values[element.name] = Number(element.value);
     else values[element.name] = element.value;
@@ -63,6 +65,10 @@ function readForm(form) {
 
 // Trang gọi hàm này mỗi khi dữ liệu đổi (xem onChange trong layout.js)
 export function updateSidebar(what) {
+  if (what === 'types') {
+    drawTypeOptions();
+    if (state.room) drawRackList();   // danh sách kệ hiện mã loại hàng
+  }
   if (what === 'draft' || what === 'selection') drawAll();
   drawDraftBar();
   drawLive();
@@ -71,6 +77,7 @@ export function updateSidebar(what) {
 function drawAll() {
   const room = state.room;
   if (!room) return;
+  drawTypeOptions();   // có sẵn các lựa chọn rồi mới điền giá trị loại hàng vào ô chọn
   fillForm(roomForm, room);
   fillForm(newRackForm, state.newRack);
   fillForm(newArrayForm, {
@@ -104,6 +111,61 @@ function drawSelected() {
   }
 }
 
+// Ô chọn loại hàng (form sửa kệ và form kệ mới): đổ lại danh sách, giữ nguyên lựa chọn đang có
+function drawTypeOptions() {
+  const options = state.productTypes.map((t) =>
+    `<option value="${t.id}">${escapeHtml(t.code)} · ${escapeHtml(t.name)}</option>`);
+  const html = `<option value="">Không gắn (nhận hàng chưa phân loại)</option>${options.join('')}`;
+  const fromData = new Map([[rackForm, selectedRack()?.productTypeId], [newRackForm, state.newRack.productTypeId]]);
+  for (const form of [rackForm, newRackForm]) {
+    const select = form.elements.productTypeId;
+    // Lần đầu (ô chưa có lựa chọn nào nên chưa giữ được giá trị): lấy từ dữ liệu
+    const chosen = select.options.length > 0 ? select.value : String(fromData.get(form) ?? '');
+    select.innerHTML = html;
+    select.value = chosen;
+  }
+}
+
+// Nút "+" cạnh ô loại hàng: mở 2 ô Mã, Tên; bấm Thêm thì tạo loại hàng trên server rồi chọn luôn cho kệ
+function setupTypeCreator(form) {
+  const box = form.querySelector('.type-new');
+  const code = box.querySelector('[data-type-code]');
+  const name = box.querySelector('[data-type-name]');
+  const close = () => {
+    box.hidden = true;
+    code.value = '';
+    name.value = '';
+  };
+  const save = async () => {
+    try {
+      const created = await createProductType(code.value, name.value);
+      close();
+      form.elements.productTypeId.value = created.id;
+      // báo như người dùng vừa chọn: form kệ mới lưu cấu hình, form sửa kệ hiện bóng mờ (bấm Áp dụng mới sửa)
+      form.elements.productTypeId.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (err) {
+      showMessage(err.message, true);
+    }
+  };
+
+  form.querySelector('[data-type-open]').addEventListener('click', () => {
+    box.hidden = false;
+    code.focus();
+  });
+  box.querySelector('[data-type-cancel]').addEventListener('click', close);
+  box.querySelector('[data-type-save]').addEventListener('click', save);
+  // Gõ Mã / Tên không phải là sửa kệ: không cho sự kiện lan lên form (khỏi hỏi server kiểm tra kệ)
+  box.addEventListener('input', (event) => event.stopPropagation());
+  // Enter trong ô Mã / Tên: thêm loại hàng, không gửi form kệ
+  box.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    save();
+  });
+}
+setupTypeCreator(rackForm);
+setupTypeCreator(newRackForm);
+
 // Kho hàng nghìn kệ: dựng hết thành nút thì mỗi lần chọn kệ trình duyệt phải dựng lại cả nghìn dòng.
 // Chỉ hiện chừng này dòng đầu (luôn kèm kệ đang chọn); kệ còn lại chọn bằng cách bấm trên mặt bằng.
 const MAX_RACK_ROWS = 200;
@@ -117,10 +179,12 @@ function drawRackList() {
   const selected = selectedRack();
   if (selected && !shown.includes(selected)) shown.unshift(selected);
 
+  const typeCodes = new Map(state.productTypes.map((t) => [t.id, t.code]));
   const rows = shown.map((r) => `
     <li>
       <button type="button" class="pick" data-rack-id="${r.id}" aria-pressed="${r.id === state.selectedRackId}">
-        <span>${escapeHtml(r.code)}</span><span class="muted">${slotText(r.slotCount)}</span>
+        <span>${escapeHtml(r.code)}${r.productTypeId != null ? ` <span class="muted">· ${escapeHtml(typeCodes.get(r.productTypeId) ?? '?')}</span>` : ''}</span>
+        <span class="muted">${slotText(r.slotCount)}</span>
       </button>
     </li>`);
   const hidden = racks.length - shown.length;

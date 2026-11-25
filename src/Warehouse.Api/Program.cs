@@ -18,6 +18,8 @@ builder.Services.AddSingleton<AllocationQueue>();
 builder.Services.AddHostedService<AllocationWorker>();
 builder.Services.AddSingleton<LayoutSaveQueue>();
 builder.Services.AddHostedService<LayoutSaveWorker>();
+builder.Services.AddScoped<IProductTypeStore, PostgresProductTypeStore>();
+builder.Services.AddScoped<IProductTypeService, ProductTypeService>();
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())

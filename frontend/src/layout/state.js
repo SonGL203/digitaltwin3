@@ -27,13 +27,14 @@ export const state = {
   // isValid = null là đang chờ server trả lời.
   preview: null,
   // Cấu hình kệ mới khi dùng công cụ "Đặt kệ". Mã kệ tự sinh lúc đặt.
-  newRack: { rotation: 0, levels: 3, levelHeight: 1.2, bays: 4, bayWidth: 1.2, depth: 1.0, hasTop: true, maxWeight: 1000 },
+  newRack: { rotation: 0, levels: 3, levelHeight: 1.2, bays: 4, bayWidth: 1.2, depth: 1.0, hasTop: true, maxWeight: 1000, productTypeId: null },
   // Đặt dãy kệ (công cụ 'add-array'): rows hàng × perRow kệ, mỗi kệ theo cấu hình newRack.
   // gapAlong = khe giữa hai kệ cạnh nhau trong một hàng, aisle = lối đi giữa hai hàng; null = lấy lối đi tối thiểu của phòng.
   newArray: { rows: 2, perRow: 3, gapAlong: null, aisle: null },
   // Bóng mờ của cả dãy: { requests: [...kệ], results: null | [{ isValid, reason, footprintWidth, footprintDepth }], reason }
   // results = null là đang chờ server trả lời.
   arrayPreview: null,
+  productTypes: [],         // loại hàng [{ id, code, name }] để chọn cho kệ (GET /api/product-types)
 };
 
 // ---------- báo cho giao diện biết dữ liệu vừa đổi ----------
@@ -43,6 +44,7 @@ export const state = {
 //   'preview'   bóng mờ đổi                               → chỉ vẽ lại canvas và dòng kiểm tra
 //   'status'    trạng thái lưu, lỗi bản nháp, kích thước  → chỉ vẽ lại canvas và thanh bản nháp
 //   'view'      đổi công cụ, bật/tắt lưới                  → chỉ vẽ lại canvas và thanh công cụ
+//   'types'     danh sách loại hàng đổi                     → vẽ lại các ô chọn loại hàng
 let listener = function () {};
 export function onChange(fn) {
   listener = fn;
@@ -113,6 +115,21 @@ export async function loadRoom() {
   if (!room.racks.some((r) => r.id === state.selectedRackId)) state.selectedRackId = null;
   if (!room.obstacles.some((o) => o.id === state.selectedObstacleId)) state.selectedObstacleId = null;
   notify('draft');
+}
+
+/** Tải danh sách loại hàng để chọn cho kệ. */
+export async function loadProductTypes() {
+  state.productTypes = await getJson('/api/product-types');
+  notify('types');
+}
+
+/** Thêm loại hàng mới ngay trên server (không thuộc bản nháp), trả về { id, code, name }. Lỗi thì ném ra. */
+export async function createProductType(code, name) {
+  const created = await sendJson('POST', '/api/product-types', { code, name });
+  state.productTypes = [...state.productTypes, created].sort((a, b) => a.code.localeCompare(b.code));
+  notify('types');
+  showMessage(`Đã thêm loại hàng ${created.code} · ${created.name}.`);
+  return created;
 }
 
 /** Gửi cả bản nháp lên server (một lần, một transaction). Lỗi thì giữ nguyên bản nháp để sửa tiếp. */
@@ -414,7 +431,7 @@ export function arrayRequests(x, y) {
   for (let row = 0; row < rows; row++) {
     for (let i = 0; i < perRow; i++) {
       requests.push({
-        ...rack, productTypeId: null, code: codes[requests.length],
+        ...rack, code: codes[requests.length],
         x: round(x + i * (width + gapAlong)), y: round(y + row * (depth + aisle)),
         footprintWidth: width, footprintDepth: depth,   // tạm để vẽ bóng ngay; server trả số chính thức
       });

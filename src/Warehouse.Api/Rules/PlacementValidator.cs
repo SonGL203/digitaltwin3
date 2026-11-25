@@ -27,6 +27,9 @@ public static class PlacementValidator
     /// </summary>
     public const int MaxRacksPerRoom = 50_000;
 
+    /// <summary>Diện tích sàn tối đa của một phòng (m²), thay cho giới hạn 500 m mỗi cạnh.</summary>
+    public const double MaxRoomArea = 250_000;
+
     private static readonly CultureInfo Vi = CultureInfo.GetCultureInfo("vi-VN");
 
     /// <summary>Hiện số mét kiểu Việt Nam: 1,2.</summary>
@@ -40,8 +43,11 @@ public static class PlacementValidator
         name = name.Trim();
         if (name.Length == 0) return "Chưa nhập tên kho.";
         if (name.Length > 50) return "Tên kho tối đa 50 ký tự.";
-        if (width < 0.5 || width > 500) return "Chiều dài phải từ 0,5 đến 500 m.";
-        if (depth < 0.5 || depth > 500) return "Chiều rộng phải từ 0,5 đến 500 m.";
+        if (width < 0.5) return "Chiều dài phải ít nhất 0,5 m.";
+        if (depth < 0.5) return "Chiều rộng phải ít nhất 0,5 m.";
+        // Không giới hạn từng cạnh, chỉ giới hạn diện tích sàn
+        if (width * depth > MaxRoomArea + Eps)
+            return $"Diện tích phòng tối đa {MaxRoomArea.ToString("N0", Vi)} m² (đang là {M(width * depth)} m²).";
         if (height < 1 || height > 50) return "Chiều cao trần phải từ 1 đến 50 m.";
         if (gridSize < 0.05 || gridSize > 10) return "Bước lưới phải từ 0,05 đến 10 m.";
         if (minGap < 0 || minGap > 20) return "Lối đi tối thiểu phải từ 0 đến 20 m.";

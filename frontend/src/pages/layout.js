@@ -3,7 +3,7 @@ import { showMessage } from '../shared/message.js';
 import { formatMeters } from '../shared/format.js';
 import { createCanvas } from '../layout/canvas.js';
 import { updateSidebar } from '../layout/sidebar.js';
-import { loadRoom, onChange, state } from '../layout/state.js';
+import { loadProductTypes, loadRoom, onChange, state } from '../layout/state.js';
 
 // Trang Mặt bằng (layout.html?roomId=3). File này chỉ NỐI các phần lại:
 //   layout/state.js    dữ liệu bản nháp + các hành động sửa + gọi server
@@ -45,6 +45,8 @@ async function start(id) {
     canvas.redraw();
   });
 
+  // Loại hàng chỉ để đổ vào ô chọn: lỗi thì báo, trang vẫn dùng được
+  loadProductTypes().catch((err) => showMessage(err.message, true));
   try {
     await loadRoom();
   } catch (err) {

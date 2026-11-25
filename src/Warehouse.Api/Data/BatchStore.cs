@@ -120,7 +120,8 @@ namespace Warehouse.Api.Data
 
             using var cmd = new NpgsqlCommand(
                 @"SELECT s.""Id"", s.""Code"", k.""Code"", l.""IsTop""" + SlotJoins + FitCondition +
-                @" ORDER BY l.""IsTop"", k.""Id"", l.""Number"", s.""Position""
+                // Kệ gắn đúng loại hàng của pallet được lấp trước, kệ không gắn loại (dùng chung) để sau
+                @" ORDER BY (k.""ProductTypeId"" IS NULL), l.""IsTop"", k.""Id"", l.""Number"", s.""Position""
                    LIMIT @limit", conn);
             AddFitParameters(cmd, roomId, type.Length, type.Width, type.Height, type.Weight, productTypeId);
             cmd.Parameters.AddWithValue("limit", limit);

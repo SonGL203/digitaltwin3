@@ -540,7 +540,7 @@ export function createCanvas(container, { onCursor } = {}) {
 
   // ---------- đặt kệ mới ----------
   function newRackRequest(x, y) {
-    return { ...state.newRack, code: nextRackCode(), x, y, productTypeId: null };
+    return { ...state.newRack, code: nextRackCode(), x, y };
   }
 
   function updateNewRackPreview(p) {

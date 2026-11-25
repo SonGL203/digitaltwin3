@@ -17,6 +17,12 @@
 }
 @keyframes draft-spin { to { transform: rotate(360deg); } }
 
+/* Ô chọn loại hàng của kệ + nút "+" thêm loại mới ngay tại chỗ */
+.type-pick { display: flex; align-items: flex-end; gap: 6px; }
+.type-pick label { flex: 1; min-width: 0; }
+.type-new { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.type-new[hidden] { display: none; }
+
 /* Các phần trong bảng bên */
 .section { border-bottom: 1px solid var(--border); padding: 8px 0 10px; }
 .section > summary { cursor: pointer; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 2px 0 6px; }

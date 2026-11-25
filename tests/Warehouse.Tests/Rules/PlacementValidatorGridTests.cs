@@ -52,8 +52,9 @@ public class PlacementValidatorGridTests
     [Fact]
     public void TenThousandRacks_ValidateQuickly()
     {
-        // 10 000 kệ xếp lưới trong phòng 500 × 500 m: so từng cặp là 100 triệu lần (~17 giây), lưới chỉ vài chục nghìn
-        var room = new Room { Id = 1, Name = "Kho lớn", Width = 500, Depth = 500, Height = 15, GridSize = 5, MinGap = 1, Margin = 0.05 };
+        // 10 000 kệ xếp lưới trong phòng 250 × 200 m (50 000 m², diện tích tối đa): so từng cặp là 100 triệu lần (~17 giây),
+        // lưới chỉ vài chục nghìn. Kệ 1,5 × 1 m, cách nhau đúng lối đi 1 m.
+        var room = new Room { Id = 1, Name = "Kho lớn", Width = 250, Depth = 200, Height = 15, GridSize = 0.5, MinGap = 1, Margin = 0.05 };
         int id = 0;
         for (int row = 0; row < 100; row++)
             for (int col = 0; col < 100; col++)
@@ -61,8 +62,8 @@ public class PlacementValidatorGridTests
                 id++;
                 room.Racks.Add(new Rack
                 {
-                    Id = id, Code = $"K{id}", X = col * 4, Y = row * 4, Levels = 10, LevelHeight = 1,
-                    Bays = 2, BayWidth = 1.5, Depth = 1, HasTop = true, MaxWeight = 1000,
+                    Id = id, Code = $"K{id}", X = col * 2.5, Y = row * 2, Levels = 10, LevelHeight = 1,
+                    Bays = 1, BayWidth = 1.5, Depth = 1, HasTop = true, MaxWeight = 1000,
                 });
             }
 
