@@ -32,7 +32,6 @@ public class PostgresWarehouseStore(IConfiguration config) : IWarehouseStore
             }
         }
         if (room == null) return null;
-
         using (var cmd = new NpgsqlCommand(
             @"SELECT k.""Id"", k.""Code"", k.""X"", k.""Y"", k.""Rotation"",
                      COUNT(l.""Id"") FILTER (WHERE NOT l.""IsTop""),

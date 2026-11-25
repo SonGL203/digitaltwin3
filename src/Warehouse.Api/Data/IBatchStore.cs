@@ -9,7 +9,7 @@ namespace Warehouse.Api.Data
 
         HashSet<int> GetProductTypeIds();
 
-        double? GetRoomMargin(int roomId);
+        bool GetExistRoom(int roomId);
 
         int CountFreeSlots(int roomId, double length, double width, double height, double? weight, int? productTypeId);
 
@@ -19,10 +19,26 @@ namespace Warehouse.Api.Data
 
         bool BatchExists(int batchId);
 
-        List<Pallet> GetUnplacedPallets(int batchId);
+        void InsertPallets(string batchCode, int lineId, int from, int to);
 
-        List<FreeSlot> GetFreeSlots(int roomId, PalletType type, int? productTypeId);
+        string? GetBatchCode(int batchId);
 
-        int PlacePallets(int[] slotIds, int[] palletIds);
+        List<LineImport> GetImportProgress(int batchId);
+
+        List<int> GetUnfinishedImports();
+
+        int CountUnplacedPallets(int batchId, int afterId);
+
+        List<Pallet> GetUnplacedPallets(int batchId, int afterId, int limit);
+
+        List<FreeSlot> GetFreeSlots(int roomId, PalletType type, int? productTypeId, int limit);
+
+        int PlacePallets(int[] slotIds, int[] palletIds, AllocationProgress progress);
+
+        AllocationProgress? GetAllocation(int batchId);
+
+        List<AllocationProgress> GetUnfinishedAllocations();
+
+        void SaveAllocation(AllocationProgress progress);
     }
 }

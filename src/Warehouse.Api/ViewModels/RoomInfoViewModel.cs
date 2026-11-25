@@ -7,7 +7,8 @@ public class RoomInfoViewModel
     public double Width { get; set; }
     public double Depth { get; set; }
     public double Height { get; set; }
-    public List<RackInfoViewModel> Racks { get; set; } = [];
+    public int RackCount { get; set; }
+    public int SlotCount { get; set; }
 }
 
 public class RackInfoViewModel
