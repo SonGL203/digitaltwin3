@@ -28,3 +28,9 @@ public record PlacementViewModel(string PalletCode, string TypeCode, string Colo
 public record RejectionViewModel(string PalletCode, string Reason);
 
 public record AllocationViewModel(int BatchId, List<PlacementViewModel> Placements, List<RejectionViewModel> Rejected);
+
+public record ImportStatusViewModel(int BatchId, string Code, int Total, int Imported, bool Done);
+
+public record AllocationJobViewModel(
+    int BatchId, string Status, int Total, int Placed, int RejectedCount,
+    List<PlacementViewModel> Placements, List<RejectionViewModel> Rejected, string? Error);

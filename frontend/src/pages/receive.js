@@ -10,8 +10,9 @@ import { readRoomId, showRoomTabs, showTopBar } from '../shared/nav.js';
 //  0. Mở trang: GET /api/room3d/{roomId} lấy tên kho; thiếu roomId hoặc không có kho → báo lỗi, khoá nút kiểm tra.
 //  1. Người dùng nhập các dòng (số lượng + số đo).
 //  2. "Kiểm tra kho"     → POST /api/rooms/{roomId}/batches/check   (không ghi gì; server báo kho nhận được bao nhiêu)
-//  3. "Nhập vào kho này" → POST /api/batches   (chỉ tạo lô + pallet, CHƯA xếp vào khung)
-//  4. "Xếp và xem 3D"    → POST /api/rooms/{roomId}/batches/{id}/allocate, xong thì mở màn 3D cho pallet bay vào.
+//  3. "Nhập vào kho này" → POST /api/rooms/{roomId}/batches (trả 202 ngay) rồi mở màn 3D luôn.
+//                          Worker tạo pallet và xếp xen kẽ từng đợt 50.000; màn 3D tự tải lại pallet trong lúc đó.
+//  4. "Xếp và xem 3D"    → POST /api/rooms/{roomId}/batches/{id}/allocate: xếp lại phần còn thiếu của một lô cũ.
 //     Xếp lỗi thì lô vẫn đã nhập, bấm lại nút này (pallet đã vào khung không bị xếp đôi).
 //
 // Trang này không tự chọn kho hay khung, không tự đếm chỗ: mọi con số do server trả.
@@ -239,11 +240,37 @@ async function importBatch() {
     if (!ok) return;
   }
   run(async function () {
-    const batch = await sendJson('POST', '/api/batches', readBatchRequest());   // { batchId, code, palletCount }
-    outcome = { batch: batch };
-    clearCheck();
-    showMessage(`Đã nhập lô ${batch.code} (${batch.palletCount} pallet). Bấm "Xếp và xem 3D" để xếp vào khung.`);
+    // Server lưu lô + các dòng lô rồi trả 202 ngay. Worker chạy ngầm, xen kẽ: tạo 50.000 pallet → xếp ngay 50.000 đó → tạo tiếp…
+    // Trang sang màn 3D LUÔN; màn 3D đọc "watch:" để tự hỏi tiến độ và tải lại pallet dần dần.
+    const batch = await sendJson('POST', `/api/rooms/${roomId}/batches`, readBatchRequest());   // { batchId, code, palletCount }
+    try {
+      sessionStorage.setItem(`watch:${roomId}`, JSON.stringify({ batchId: batch.batchId, code: batch.code }));
+    } catch {
+      // không có sessionStorage: vẫn sang được, chỉ không tự tải lại
+    }
+    location.href = `warehouse3d.html?roomId=${roomId}`;
   });
+}
+
+// Theo dõi việc tạo pallet ngầm, KHÔNG khoá trang (không nằm trong run): trang vẫn dùng bình thường.
+// Bấm "Xếp và xem 3D" lúc đang tạo cũng được: server xếp sau khi tạo xong (cùng một hàng đợi, chạy lần lượt).
+async function watchImport(batch) {
+  for (;;) {
+    let status;
+    try {
+      status = await getJson(`/api/batches/${batch.batchId}`);   // { total, imported, done }
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 2000));   // mất mạng một lúc: thử lại, không bỏ cuộc
+      continue;
+    }
+    if (outcome?.batch.batchId !== batch.batchId) return;          // đã sang lô khác
+    if (status.done) {
+      showMessage(`Đã nhập lô ${batch.code} (${batch.palletCount} pallet). Bấm "Xếp và xem 3D" để xếp vào khung.`);
+      return;
+    }
+    showMessage(`Đang tạo pallet cho lô ${batch.code}: ${status.imported} / ${status.total}… (vẫn bấm "Xếp và xem 3D" được)`);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
 }
 
 // ---------- 7. Lô vừa nhập: nút "Xếp và xem 3D" ----------
@@ -254,28 +281,22 @@ function drawOutcome() {
   }
   const { batch } = outcome;
   outcomeBox.innerHTML = `
-    <h3>Lô ${escapeHtml(batch.code)} đã nhập (${batch.palletCount} pallet), chưa xếp vào khung</h3>
+    <h3>Lô ${escapeHtml(batch.code)} (${batch.palletCount} pallet), chưa xếp vào khung</h3>
     <button type="button" class="primary" id="btnAllocate">Xếp và xem 3D</button>
   `;
   document.getElementById('btnAllocate').addEventListener('click', allocateAndView);
 }
 
-// Xếp lô vào kho đang mở rồi sang màn 3D. Lỗi thì ở lại trang này (run báo lỗi), bấm lại được: không xếp đôi.
-// Danh sách pallet vừa xếp cất vào sessionStorage để màn 3D cho pallet bay vào đúng thứ tự server đã xếp
-// (sessionStorage: dữ liệu tạm của tab trình duyệt, chuyển trang vẫn còn).
+// Gửi yêu cầu xếp (server trả 202 ngay, worker xếp ngầm) rồi sang màn 3D LUÔN, không chờ xếp xong.
+// Màn 3D đọc "watch:" trong sessionStorage để tự hỏi tiến độ và tải lại pallet dần dần.
 function allocateAndView() {
   run(async function () {
-    const allocation = await sendJson('POST', `/api/rooms/${roomId}/batches/${outcome.batch.batchId}/allocate`);
-    const placed = allocation.placements.length;
-    const rejected = allocation.rejected.length;
+    const batch = outcome.batch;
+    await sendJson('POST', `/api/rooms/${roomId}/batches/${batch.batchId}/allocate`);
     try {
-      sessionStorage.setItem(`placements:${roomId}`, JSON.stringify(allocation.placements));
-      sessionStorage.setItem(`play:${roomId}`, '1');
-      sessionStorage.setItem(`note:${roomId}`, rejected
-        ? `Lô ${outcome.batch.code}: đã xếp ${placed} pallet, ${rejected} pallet chưa có khung (${allocation.rejected[0].reason})`
-        : `Lô ${outcome.batch.code}: đã xếp ${placed} pallet.`);
+      sessionStorage.setItem(`watch:${roomId}`, JSON.stringify({ batchId: batch.batchId, code: batch.code }));
     } catch {
-      // không có sessionStorage: vẫn sang được, chỉ không có hiệu ứng bay
+      // không có sessionStorage: vẫn sang được, chỉ không tự tải lại
     }
     location.href = `warehouse3d.html?roomId=${roomId}`;
   });

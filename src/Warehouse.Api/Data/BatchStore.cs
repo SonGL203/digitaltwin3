@@ -51,15 +51,14 @@ namespace Warehouse.Api.Data
             return ids;
         }
 
-        public double? GetRoomMargin(int roomId)
+        public bool GetExistRoom(int roomId)
         {
             using var conn = new NpgsqlConnection(_connectionString);
             conn.Open();
 
-            using var cmd = new NpgsqlCommand(@"SELECT ""Margin"" FROM ""Rooms"" WHERE ""Id"" = @id", conn);
+            using var cmd = new NpgsqlCommand(@"SELECT EXISTS (SELECT 1 FROM ""Rooms"" WHERE ""Id"" = @id)", conn);
             cmd.Parameters.AddWithValue("id", roomId);
-            var value = cmd.ExecuteScalar();
-            return value == null ? null : Convert.ToDouble(value);
+            return (bool)cmd.ExecuteScalar()!;
         }
 
         private const string SlotJoins = @"
@@ -72,6 +71,14 @@ namespace Warehouse.Api.Data
             WHERE r.""Id"" = @roomId
               AND s.""Active"" = true
               AND s.""PalletId"" IS NULL
+              AND (k.""ProductTypeId"" IS NULL OR k.""ProductTypeId"" = @productTypeId)
+              AND ((@length <= k.""BayWidth"" + 1e-9 AND @width <= k.""Depth"" + 1e-9)
+                OR (@width <= k.""BayWidth"" + 1e-9 AND @length <= k.""Depth"" + 1e-9))
+              AND (l.""IsTop"" = true OR @height <= l.""Height"" - r.""Margin"" + 1e-9)
+              AND (@weight IS NULL OR @weight <= l.""MaxWeight"" + 1e-9)";
+
+        private const string LevelFitCondition = @"
+            WHERE r.""Id"" = @roomId
               AND (k.""ProductTypeId"" IS NULL OR k.""ProductTypeId"" = @productTypeId)
               AND ((@length <= k.""BayWidth"" + 1e-9 AND @width <= k.""Depth"" + 1e-9)
                 OR (@width <= k.""BayWidth"" + 1e-9 AND @length <= k.""Depth"" + 1e-9))
@@ -94,20 +101,29 @@ namespace Warehouse.Api.Data
             using var conn = new NpgsqlConnection(_connectionString);
             conn.Open();
 
-            using var cmd = new NpgsqlCommand("SELECT COUNT(*)" + SlotJoins + FitCondition, conn);
+            using var cmd = new NpgsqlCommand(
+                @"SELECT COALESCE(SUM(k.""Bays"" - (
+                             SELECT COUNT(*) FROM ""Slots"" s
+                             WHERE s.""LevelId"" = l.""Id""
+                               AND (s.""PalletId"" IS NOT NULL OR s.""Active"" = false))), 0)
+                  FROM ""Levels"" l
+                  JOIN ""Racks""  k ON k.""Id"" = l.""RackId""
+                  JOIN ""Rooms""  r ON r.""Id"" = k.""RoomId""" + LevelFitCondition, conn);
             AddFitParameters(cmd, roomId, length, width, height, weight, productTypeId);
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
 
-        public List<FreeSlot> GetFreeSlots(int roomId, PalletType type, int? productTypeId)
+        public List<FreeSlot> GetFreeSlots(int roomId, PalletType type, int? productTypeId, int limit)
         {
             using var conn = new NpgsqlConnection(_connectionString);
             conn.Open();
 
             using var cmd = new NpgsqlCommand(
                 @"SELECT s.""Id"", s.""Code"", k.""Code"", l.""IsTop""" + SlotJoins + FitCondition +
-                @" ORDER BY l.""IsTop"", k.""Id"", l.""Number"", s.""Position""", conn);
+                @" ORDER BY l.""IsTop"", k.""Id"", l.""Number"", s.""Position""
+                   LIMIT @limit", conn);
             AddFitParameters(cmd, roomId, type.Length, type.Width, type.Height, type.Weight, productTypeId);
+            cmd.Parameters.AddWithValue("limit", limit);
 
             using var reader = cmd.ExecuteReader();
             var slots = new List<FreeSlot>();
@@ -167,20 +183,78 @@ namespace Warehouse.Api.Data
                     line.Id = Convert.ToInt32(cmd.ExecuteScalar());
                 }
 
-                foreach (var pallet in line.Pallets)
-                {
-                    using var cmd = new NpgsqlCommand(
-                        @"INSERT INTO ""Pallets"" (""Code"", ""BatchLineId"")
-                          VALUES (@code, @batchLineId)
-                          RETURNING ""Id""", conn, tx);
-                    cmd.Parameters.AddWithValue("code", pallet.Code);
-                    cmd.Parameters.AddWithValue("batchLineId", line.Id);
-                    pallet.BatchLineId = line.Id;
-                    pallet.Id = Convert.ToInt32(cmd.ExecuteScalar());
-                }
             }
 
             tx.Commit();
+        }
+
+        public void InsertPallets(string batchCode, int lineId, int from, int to)
+        {
+            using var conn = new NpgsqlConnection(_connectionString);
+            conn.Open();
+
+            using var cmd = new NpgsqlCommand(
+                @"INSERT INTO ""Pallets"" (""Code"", ""BatchLineId"")
+                  SELECT @batchCode || '-P' || CASE WHEN n < 1000 THEN lpad(n::text, 3, '0') ELSE n::text END,
+                         @lineId
+                  FROM generate_series(@from, @to) AS n", conn);
+            cmd.Parameters.AddWithValue("batchCode", batchCode);
+            cmd.Parameters.AddWithValue("lineId", lineId);
+            cmd.Parameters.AddWithValue("from", from);
+            cmd.Parameters.AddWithValue("to", to);
+            cmd.CommandTimeout = 300;
+            cmd.ExecuteNonQuery();
+        }
+
+        public string? GetBatchCode(int batchId)
+        {
+            using var conn = new NpgsqlConnection(_connectionString);
+            conn.Open();
+
+            using var cmd = new NpgsqlCommand(@"SELECT ""Code"" FROM ""Batches"" WHERE ""Id"" = @id", conn);
+            cmd.Parameters.AddWithValue("id", batchId);
+            return cmd.ExecuteScalar() as string;
+        }
+
+        public List<LineImport> GetImportProgress(int batchId)
+        {
+            using var conn = new NpgsqlConnection(_connectionString);
+            conn.Open();
+
+            using var cmd = new NpgsqlCommand(
+                @"SELECT bl.""Id"", bl.""Quantity"",
+                         SUM(bl.""Quantity"") OVER (ORDER BY bl.""Id"" ROWS UNBOUNDED PRECEDING) - bl.""Quantity"" + 1,
+                         (SELECT COUNT(*) FROM ""Pallets"" p WHERE p.""BatchLineId"" = bl.""Id"")
+                  FROM ""BatchLines"" bl
+                  WHERE bl.""BatchId"" = @id
+                  ORDER BY bl.""Id""", conn);
+            cmd.Parameters.AddWithValue("id", batchId);
+
+            using var reader = cmd.ExecuteReader();
+            var lines = new List<LineImport>();
+            while (reader.Read())
+                lines.Add(new LineImport(reader.GetInt32(0), reader.GetInt32(1),
+                    Convert.ToInt32(reader.GetValue(2)), Convert.ToInt32(reader.GetValue(3))));
+            return lines;
+        }
+
+        public List<int> GetUnfinishedImports()
+        {
+            using var conn = new NpgsqlConnection(_connectionString);
+            conn.Open();
+
+            using var cmd = new NpgsqlCommand(
+                @"SELECT bl.""BatchId""
+                  FROM ""BatchLines"" bl
+                  WHERE bl.""Quantity"" > (SELECT COUNT(*) FROM ""Pallets"" p WHERE p.""BatchLineId"" = bl.""Id"")
+                  GROUP BY bl.""BatchId""
+                  ORDER BY bl.""BatchId""", conn);
+
+            using var reader = cmd.ExecuteReader();
+            var ids = new List<int>();
+            while (reader.Read())
+                ids.Add(reader.GetInt32(0));
+            return ids;
         }
 
         public bool BatchExists(int batchId)
@@ -193,7 +267,24 @@ namespace Warehouse.Api.Data
             return (bool)cmd.ExecuteScalar()!;
         }
 
-        public List<Pallet> GetUnplacedPallets(int batchId)
+        public int CountUnplacedPallets(int batchId, int afterId)
+        {
+            using var conn = new NpgsqlConnection(_connectionString);
+            conn.Open();
+
+            using var cmd = new NpgsqlCommand(
+                @"SELECT COUNT(*)
+                  FROM ""Pallets"" p
+                  JOIN ""BatchLines"" bl ON bl.""Id"" = p.""BatchLineId""
+                  WHERE bl.""BatchId"" = @batchId
+                    AND p.""Id"" > @afterId
+                    AND NOT EXISTS (SELECT 1 FROM ""Slots"" s WHERE s.""PalletId"" = p.""Id"")", conn);
+            cmd.Parameters.AddWithValue("batchId", batchId);
+            cmd.Parameters.AddWithValue("afterId", afterId);
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        public List<Pallet> GetUnplacedPallets(int batchId, int afterId, int limit)
         {
             using var conn = new NpgsqlConnection(_connectionString);
             conn.Open();
@@ -205,9 +296,13 @@ namespace Warehouse.Api.Data
                   JOIN ""BatchLines""  bl ON bl.""Id"" = p.""BatchLineId""
                   JOIN ""PalletTypes"" t  ON t.""Id""  = bl.""PalletTypeId""
                   WHERE bl.""BatchId"" = @batchId
+                    AND p.""Id"" > @afterId
                     AND NOT EXISTS (SELECT 1 FROM ""Slots"" s WHERE s.""PalletId"" = p.""Id"")
-                  ORDER BY p.""Id""", conn);
+                  ORDER BY p.""Id""
+                  LIMIT @limit", conn);
             cmd.Parameters.AddWithValue("batchId", batchId);
+            cmd.Parameters.AddWithValue("afterId", afterId);
+            cmd.Parameters.AddWithValue("limit", limit);
 
             using var reader = cmd.ExecuteReader();
             var types = new Dictionary<int, PalletType>();
@@ -242,7 +337,7 @@ namespace Warehouse.Api.Data
             return pallets;
         }
 
-        public int PlacePallets(int[] slotIds, int[] palletIds)
+        public int PlacePallets(int[] slotIds, int[] palletIds, AllocationProgress progress)
         {
             using var conn = new NpgsqlConnection(_connectionString);
             conn.Open();
@@ -266,8 +361,82 @@ namespace Warehouse.Api.Data
                 return -1;
             }
 
+            UpsertAllocation(conn, tx, progress);
             tx.Commit();
             return updated;
+        }
+
+        public AllocationProgress? GetAllocation(int batchId)
+        {
+            using var conn = new NpgsqlConnection(_connectionString);
+            conn.Open();
+
+            using var cmd = new NpgsqlCommand(AllocationSelect + @" WHERE ""BatchId"" = @batchId", conn);
+            cmd.Parameters.AddWithValue("batchId", batchId);
+
+            using var reader = cmd.ExecuteReader();
+            if (!reader.Read()) return null;
+            return ReadAllocation(reader);
+        }
+
+        public List<AllocationProgress> GetUnfinishedAllocations()
+        {
+            using var conn = new NpgsqlConnection(_connectionString);
+            conn.Open();
+
+            using var cmd = new NpgsqlCommand(
+                AllocationSelect + @" WHERE ""Status"" IN ('Queued', 'Running') ORDER BY ""UpdatedAt""", conn);
+
+            using var reader = cmd.ExecuteReader();
+            var list = new List<AllocationProgress>();
+            while (reader.Read())
+                list.Add(ReadAllocation(reader));
+            return list;
+        }
+
+        public void SaveAllocation(AllocationProgress progress)
+        {
+            using var conn = new NpgsqlConnection(_connectionString);
+            conn.Open();
+            UpsertAllocation(conn, null, progress);
+        }
+
+        private const string AllocationSelect = @"
+            SELECT ""BatchId"", ""RoomId"", ""Status"", ""AfterId"", ""Total"", ""Placed"", ""RejectedCount"", ""Error""
+            FROM ""AllocationJobs""";
+
+        private static AllocationProgress ReadAllocation(NpgsqlDataReader reader)
+        {
+            return new AllocationProgress(
+                reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2), reader.GetInt32(3),
+                reader.GetInt32(4), reader.GetInt32(5), reader.GetInt32(6),
+                reader.IsDBNull(7) ? null : reader.GetString(7));
+        }
+
+        private static void UpsertAllocation(NpgsqlConnection conn, NpgsqlTransaction? tx, AllocationProgress progress)
+        {
+            using var cmd = new NpgsqlCommand(
+                @"INSERT INTO ""AllocationJobs""
+                      (""BatchId"", ""RoomId"", ""Status"", ""AfterId"", ""Total"", ""Placed"", ""RejectedCount"", ""Error"", ""UpdatedAt"")
+                  VALUES (@batchId, @roomId, @status, @afterId, @total, @placed, @rejectedCount, @error, now())
+                  ON CONFLICT (""BatchId"") DO UPDATE SET
+                      ""RoomId"" = EXCLUDED.""RoomId"",
+                      ""Status"" = EXCLUDED.""Status"",
+                      ""AfterId"" = EXCLUDED.""AfterId"",
+                      ""Total"" = EXCLUDED.""Total"",
+                      ""Placed"" = EXCLUDED.""Placed"",
+                      ""RejectedCount"" = EXCLUDED.""RejectedCount"",
+                      ""Error"" = EXCLUDED.""Error"",
+                      ""UpdatedAt"" = now()", conn, tx);
+            cmd.Parameters.AddWithValue("batchId", progress.BatchId);
+            cmd.Parameters.AddWithValue("roomId", progress.RoomId);
+            cmd.Parameters.AddWithValue("status", progress.Status);
+            cmd.Parameters.AddWithValue("afterId", progress.AfterId);
+            cmd.Parameters.AddWithValue("total", progress.Total);
+            cmd.Parameters.AddWithValue("placed", progress.Placed);
+            cmd.Parameters.AddWithValue("rejectedCount", progress.RejectedCount);
+            cmd.Parameters.Add(new NpgsqlParameter("error", NpgsqlTypes.NpgsqlDbType.Text) { Value = (object?)progress.Error ?? DBNull.Value });
+            cmd.ExecuteNonQuery();
         }
     }
 }

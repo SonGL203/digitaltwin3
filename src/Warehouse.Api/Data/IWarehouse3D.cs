@@ -1,3 +1,4 @@
+using Warehouse.Api.Models;
 using Warehouse.Api.ViewModels;
 
 namespace Warehouse.Api.Data
@@ -6,8 +7,10 @@ namespace Warehouse.Api.Data
     {
         RoomInfoViewModel? GetRoom(int roomId);
 
-        List<RackInfoViewModel> GetRacks(int roomId);
+        (int RackCount, int SlotCount) GetRoomCounts(int roomId);
 
-        List<SlotViewModel> GetSlots(int roomId);
+        List<RackInfoViewModel> GetRacks(int roomId, ViewRect? view);
+
+        List<SlotViewModel> GetSlots(int roomId, ViewRect? view);
     }
 }

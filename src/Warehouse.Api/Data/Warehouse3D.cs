@@ -1,4 +1,5 @@
 using Npgsql;
+using Warehouse.Api.Models;
 using Warehouse.Api.ViewModels;
 
 namespace Warehouse.Api.Data
@@ -32,7 +33,25 @@ namespace Warehouse.Api.Data
             };
         }
 
-        public List<RackInfoViewModel> GetRacks(int roomId)
+        public (int RackCount, int SlotCount) GetRoomCounts(int roomId)
+        {
+            using var conn = new NpgsqlConnection(_connectionString);
+            conn.Open();
+
+            using var cmd = new NpgsqlCommand(
+                @"SELECT (SELECT COUNT(*) FROM ""Racks"" WHERE ""RoomId"" = @id),
+                         (SELECT COALESCE(SUM(k.""Bays""), 0)
+                          FROM ""Levels"" l
+                          JOIN ""Racks"" k ON k.""Id"" = l.""RackId""
+                          WHERE k.""RoomId"" = @id)", conn);
+            cmd.Parameters.AddWithValue("id", roomId);
+
+            using var reader = cmd.ExecuteReader();
+            reader.Read();
+            return (Convert.ToInt32(reader.GetValue(0)), Convert.ToInt32(reader.GetValue(1)));
+        }
+
+        public List<RackInfoViewModel> GetRacks(int roomId, ViewRect? view)
         {
             using var conn = new NpgsqlConnection(_connectionString);
             conn.Open();
@@ -43,9 +62,10 @@ namespace Warehouse.Api.Data
                          l.""Id"", l.""Number"", l.""Height"", l.""MaxWeight"", l.""IsTop""
                   FROM ""Racks"" k
                   LEFT JOIN ""Levels"" l ON l.""RackId"" = k.""Id""
-                  WHERE k.""RoomId"" = @id
+                  WHERE k.""RoomId"" = @id" + (view == null ? "" : ViewCondition) + @"
                   ORDER BY k.""Id"", l.""Number""", conn);
             cmd.Parameters.AddWithValue("id", roomId);
+            AddViewParameters(cmd, view);
 
             using var reader = cmd.ExecuteReader();
 
@@ -87,7 +107,22 @@ namespace Warehouse.Api.Data
             return racks;
         }
 
-        public List<SlotViewModel> GetSlots(int roomId)
+        private const string ViewCondition = @"
+                    AND k.""X"" < @x2
+                    AND k.""X"" + CASE WHEN k.""Rotation"" = 90 THEN k.""Depth"" ELSE k.""Bays"" * k.""BayWidth"" END > @x1
+                    AND k.""Y"" < @y2
+                    AND k.""Y"" + CASE WHEN k.""Rotation"" = 90 THEN k.""Bays"" * k.""BayWidth"" ELSE k.""Depth"" END > @y1";
+
+        private static void AddViewParameters(NpgsqlCommand cmd, ViewRect? view)
+        {
+            if (view == null) return;
+            cmd.Parameters.AddWithValue("x1", view.X1);
+            cmd.Parameters.AddWithValue("y1", view.Y1);
+            cmd.Parameters.AddWithValue("x2", view.X2);
+            cmd.Parameters.AddWithValue("y2", view.Y2);
+        }
+
+        public List<SlotViewModel> GetSlots(int roomId, ViewRect? view)
         {
             using var conn = new NpgsqlConnection(_connectionString);
             conn.Open();
@@ -108,9 +143,10 @@ namespace Warehouse.Api.Data
                   LEFT JOIN ""BatchLines""   bl ON bl.""Id"" = p.""BatchLineId""
                   LEFT JOIN ""PalletTypes""  t  ON t.""Id""  = bl.""PalletTypeId""
                   LEFT JOIN ""ProductTypes"" pt ON pt.""Id"" = bl.""ProductTypeId""
-                  WHERE k.""RoomId"" = @id
+                  WHERE k.""RoomId"" = @id" + (view == null ? "" : ViewCondition) + @"
                   ORDER BY k.""Id"", l.""Number"", s.""Position""", conn);
             cmd.Parameters.AddWithValue("id", roomId);
+            AddViewParameters(cmd, view);
 
             using var reader = cmd.ExecuteReader();
             var slots = new List<SlotViewModel>();

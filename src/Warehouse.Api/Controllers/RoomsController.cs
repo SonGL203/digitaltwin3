@@ -18,7 +18,6 @@ public class RoomsController(IRoomService roomService) : ControllerBase
     public IActionResult GetRoom(int roomId)
     {
         var room = roomService.GetRoom(roomId);
-
         if (room == null)
             return Problem(detail: $"Không có phòng Id {roomId}.", statusCode: 404);
 
