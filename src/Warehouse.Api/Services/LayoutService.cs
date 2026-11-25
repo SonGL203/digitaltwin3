@@ -14,11 +14,51 @@ public interface ILayoutService
     /// Lưu bản nháp (gọi sau khi Validate báo hợp lệ). Trả null khi đã lưu;
     /// trả câu lý do khi xung đột với dữ liệu đang có: có người lưu trước, kệ còn chứa pallet, kệ đã bị xoá.
     /// </summary>
-    string? Save(int roomId, SaveLayoutRequest request);
+    string? Save(int roomId, SaveLayoutRequest request, LayoutSaveJob? job = null, CancellationToken cancel = default);
+
+    /// <summary>Kiểm tra luật rồi xếp lần lưu vào hàng đợi nền (202). 400 sai luật, 404 không có phòng, 409 kho đang được lưu.</summary>
+    ServiceResult<LayoutSaveJobViewModel> StartSave(int roomId, SaveLayoutRequest request);
+
+    /// <summary>Tiến độ lần lưu gần nhất của kho (404 khi chưa có lần nào kể từ lúc server chạy).</summary>
+    ServiceResult<LayoutSaveJobViewModel> GetSaveStatus(int roomId);
+
+    /// <summary>LayoutSaveWorker gọi: ghi bản nháp xuống database, cập nhật job.</summary>
+    void RunSave(LayoutSaveJob job, CancellationToken stoppingToken);
 }
 
-public class LayoutService(IWarehouseStore store, ILayoutStore layoutStore) : ILayoutService
+public class LayoutService(IWarehouseStore store, ILayoutStore layoutStore, LayoutSaveQueue queue) : ILayoutService
 {
+    public ServiceResult<LayoutSaveJobViewModel> StartSave(int roomId, SaveLayoutRequest request)
+    {
+        var check = Validate(roomId, request);
+        if (check == null)
+            return ServiceResult<LayoutSaveJobViewModel>.Fail(404, $"Không có phòng Id {roomId}.");
+        if (!check.IsValid)
+            return ServiceResult<LayoutSaveJobViewModel>.Fail(400, check.Reason!);
+
+        var job = new LayoutSaveJob(roomId, request);
+        if (!queue.TryPush(job))
+            return ServiceResult<LayoutSaveJobViewModel>.Fail(409, "Kho đang được lưu, chờ lần lưu trước xong rồi thử lại.");
+
+        return ServiceResult<LayoutSaveJobViewModel>.Ok(job.Snapshot());
+    }
+
+    public ServiceResult<LayoutSaveJobViewModel> GetSaveStatus(int roomId)
+    {
+        var job = queue.Find(roomId);
+        if (job == null)
+            return ServiceResult<LayoutSaveJobViewModel>.Fail(404, $"Kho Id {roomId} chưa có lần lưu nào (máy chủ có thể vừa khởi động lại).");
+
+        return ServiceResult<LayoutSaveJobViewModel>.Ok(job.Snapshot());
+    }
+
+    public void RunSave(LayoutSaveJob job, CancellationToken stoppingToken)
+    {
+        job.Start();
+        var conflict = Save(job.RoomId, job.Request, job, stoppingToken);
+        job.Finish(conflict == null ? "Done" : "Conflict", conflict);
+    }
+
     public LayoutCheckViewModel? Validate(int roomId, SaveLayoutRequest request)
     {
         if (!layoutStore.RoomExists(roomId)) return null;
@@ -37,7 +77,7 @@ public class LayoutService(IWarehouseStore store, ILayoutStore layoutStore) : IL
 
     private const string VersionConflict = "Kho vừa được lưu ở nơi khác. Bấm \"Bỏ thay đổi\" để tải bản mới rồi sửa lại.";
 
-    public string? Save(int roomId, SaveLayoutRequest request)
+    public string? Save(int roomId, SaveLayoutRequest request, LayoutSaveJob? job = null, CancellationToken cancel = default)
     {
         var current = store.GetRoom(roomId);
         if (current == null) return $"Không có phòng Id {roomId}.";
@@ -65,7 +105,8 @@ public class LayoutService(IWarehouseStore store, ILayoutStore layoutStore) : IL
         }
 
         // Store so version lần nữa trong transaction: phòng khi có người lưu xen giữa lúc kiểm tra và lúc ghi
-        return layoutStore.SaveLayout(room, current.Racks, request.Version) ? null : VersionConflict;
+        return layoutStore.SaveLayout(room, current.Racks, request.Version, job == null ? null : job.Progress, cancel)
+            ? null : VersionConflict;
     }
 
     /// <summary>Luật đặt kệ (hàm thuần) + những gì phải hỏi database: trùng tên kho, loại hàng có tồn tại.</summary>

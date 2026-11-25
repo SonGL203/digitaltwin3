@@ -21,6 +21,12 @@ public static class PlacementValidator
     /// <summary>Sai số so sánh số thực (mét): 0,1 + 0,2 vẫn bằng 0,3.</summary>
     public const double Eps = 1e-6;
 
+    /// <summary>
+    /// Số kệ tối đa trong một phòng. Mỗi kệ ~175 byte JSON: 50 000 kệ ≈ 9 MB mỗi lần gửi bản nháp,
+    /// còn xa giới hạn 30 MB của Kestrel; mỗi kệ tới vài trăm khung nên cũng là cỡ vài triệu khung.
+    /// </summary>
+    public const int MaxRacksPerRoom = 50_000;
+
     private static readonly CultureInfo Vi = CultureInfo.GetCultureInfo("vi-VN");
 
     /// <summary>Hiện số mét kiểu Việt Nam: 1,2.</summary>
@@ -74,7 +80,13 @@ public static class PlacementValidator
     }
 
     /// <summary>Vị trí của kệ: trong sàn, không vượt trần, không đè tường/cột/kệ khác, đủ lối đi tới kệ khác.</summary>
-    public static string? CheckRackPlacement(Room room, Rack rack)
+    public static string? CheckRackPlacement(Room room, Rack rack) => CheckRackPlacement(room, rack, null);
+
+    /// <summary>
+    /// Như trên; grid (lưới chia ô các kệ của room) cho phép chỉ so với kệ ở gần thay vì cả phòng.
+    /// Kết quả giống hệt khi không có lưới: kệ gần vẫn được xét theo đúng thứ tự trong room.Racks.
+    /// </summary>
+    private static string? CheckRackPlacement(Room room, Rack rack, RackGrid? grid)
     {
         var box = rack.GetBounds();
         if (!InsideFloor(room, box)) return "Kệ ra ngoài sàn phòng.";
@@ -89,7 +101,7 @@ public static class PlacementValidator
                 return $"Kệ đè {(o.Kind == ObstacleKind.Wall ? "tường" : "cột")} tại ({M(o.X)}; {M(o.Y)}).";
         }
 
-        foreach (var other in room.Racks)
+        foreach (var other in grid == null ? room.Racks : grid.Near(box, room.MinGap))
         {
             if (ReferenceEquals(other, rack)) continue;
             var otherBox = other.GetBounds();
@@ -109,6 +121,8 @@ public static class PlacementValidator
     public static LayoutCheck CheckLayout(Room room, IReadOnlySet<int>? productTypeIds = null)
     {
         string? roomReason = CheckRoomValues(room.Name, room.Width, room.Depth, room.Height, room.GridSize, room.MinGap, room.Margin);
+        if (roomReason == null && room.Racks.Count > MaxRacksPerRoom)
+            roomReason = $"Một phòng tối đa {MaxRacksPerRoom.ToString("N0", Vi)} kệ (bản nháp đang có {room.Racks.Count.ToString("N0", Vi)} kệ).";
         if (roomReason == null)
         {
             foreach (var o in room.Obstacles)
@@ -124,6 +138,9 @@ public static class PlacementValidator
             .Select(g => g.Key)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        // Hàng nghìn kệ: so từng cặp là n² lần (10 000 kệ ≈ 100 triệu cặp, ~17 giây); lưới chỉ so mỗi kệ với kệ quanh nó
+        var grid = roomReason == null && room.Racks.Count > 1 ? new RackGrid(room) : null;
+
         var checks = room.Racks.Select(rack =>
         {
             string? reason = CheckRackValues(rack, room.Margin);
@@ -132,7 +149,7 @@ public static class PlacementValidator
             if (reason == null && rack.ProductTypeId is int typeId && productTypeIds != null && !productTypeIds.Contains(typeId))
                 reason = $"Loại hàng Id {typeId} không tồn tại.";
             if (reason == null && roomReason == null)
-                reason = CheckRackPlacement(room, rack);
+                reason = CheckRackPlacement(room, rack, grid);
             return new RackCheck(rack, reason);
         }).ToList();
 

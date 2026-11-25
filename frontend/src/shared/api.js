@@ -2,7 +2,9 @@
 
 // Đọc câu lý do từ thân lỗi của backend (ProblemDetails: { detail }, hoặc lỗi [Range] có "errors").
 async function readError(response, method, url) {
-  let message = `${method} ${url} → lỗi ${response.status}`;
+  let message = response.status === 413
+    ? 'Dữ liệu gửi lên quá lớn (quá nhiều kệ trong một lần), máy chủ không nhận.'
+    : `${method} ${url} → lỗi ${response.status}`;
   try {
     const problem = await response.json();
     if (problem.detail) message = problem.detail;

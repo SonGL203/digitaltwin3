@@ -121,7 +121,9 @@ export async function saveDraft() {
   state.saving = true;
   notify('status');
   try {
-    await sendJson('PUT', `/api/rooms/${state.roomId}/layout`, toLayoutRequest(state.room));
+    // Server kiểm tra luật ngay (400 thì ném lỗi), rồi ghi database ở nền: hỏi tiến độ tới khi xong
+    const job = await sendJson('PUT', `/api/rooms/${state.roomId}/layout`, toLayoutRequest(state.room));
+    await waitForSave(job);
     state.saving = false;
     await loadRoom();   // tải lại: Id thật của kệ mới, số khung do server sinh, version mới
     showMessage('Đã lưu nháp.');
@@ -130,6 +132,23 @@ export async function saveDraft() {
     notify('status');
     showMessage(err.message, true);
   }
+}
+
+/**
+ * Hỏi GET /layout/save tới khi lưu xong. job: { status, total, built, error }.
+ * Mất mạng một lúc thì thử lại; Conflict / Failed thì ném Error kèm câu lý do của server.
+ */
+async function waitForSave(job) {
+  while (job.status === 'Queued' || job.status === 'Running') {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      job = await getJson(`/api/rooms/${state.roomId}/layout/save`);
+    } catch (err) {
+      if (err.message === 'Không kết nối được máy chủ.') continue;   // mất mạng: hỏi lại
+      throw err;                                                     // 404: server khởi động lại, lần lưu bị bỏ
+    }
+  }
+  if (job.status !== 'Done') throw new Error(job.error ?? 'Lưu không thành công.');
 }
 
 /** Bỏ mọi thay đổi chưa lưu, lấy lại kho như đã lưu trên server. */
@@ -253,6 +272,19 @@ export async function removeRack(rack) {
 let draftCheckTimer = null;
 
 /** Sau mỗi thay đổi: hỏi server kiểm tra cả bản nháp, lấy kích thước chiếm chỗ mới cho từng kệ và lỗi đầu tiên (nếu có). */
+/**
+ * Bảng tra kết quả kiểm tra theo mã kệ (không phân biệt hoa thường). Trùng mã thì giữ dòng đầu, giống find trước đây.
+ * Nghìn kệ mà mỗi kệ find trong nghìn kết quả là cả trăm triệu lần so chuỗi: trình duyệt đơ.
+ */
+function checksByCode(check) {
+  const map = new Map();
+  for (const c of check.racks) {
+    const key = c.code.toLowerCase();
+    if (!map.has(key)) map.set(key, c);
+  }
+  return map;
+}
+
 function scheduleDraftCheck() {
   clearTimeout(draftCheckTimer);
   draftCheckTimer = setTimeout(async function () {
@@ -262,8 +294,9 @@ function scheduleDraftCheck() {
       // check: { isValid, reason, racks: [{ code, isValid, reason, footprintWidth, footprintDepth }] }
       const check = await sendJson('POST', `/api/rooms/${state.roomId}/layout/validate`, toLayoutRequest(room));
       if (state.room !== room) return;   // bản nháp đã đổi tiếp: kết quả này cũ, lần hỏi sau sẽ thay
+      const byCode = checksByCode(check);
       for (const r of room.racks) {
-        const c = check.racks.find((x) => x.code.toLowerCase() === r.code.toLowerCase());
+        const c = byCode.get(r.code.toLowerCase());
         if (c) {
           r.footprintWidth = c.footprintWidth;
           r.footprintDepth = c.footprintDepth;
@@ -403,8 +436,9 @@ export function previewRackArray(requests) {
       const body = toLayoutRequest({ ...room, racks: [...room.racks, ...requests.map((r) => ({ ...r, id: null }))] });
       const check = await sendJson('POST', `/api/rooms/${state.roomId}/layout/validate`, body);
       if (seq !== validateSeq) return;
+      const byCode = checksByCode(check);
       const results = requests.map((r) => {
-        const c = check.racks.find((x) => x.code.toLowerCase() === r.code.toLowerCase());
+        const c = byCode.get(r.code.toLowerCase());
         return c ?? { isValid: false, reason: check.reason, footprintWidth: r.footprintWidth, footprintDepth: r.footprintDepth };
       });
       // Lỗi chung của bản nháp (ví dụ tường ra ngoài phòng) cũng chặn việc đặt dãy

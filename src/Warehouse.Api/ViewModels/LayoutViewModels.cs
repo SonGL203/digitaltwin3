@@ -48,6 +48,12 @@ public class RackRequest
     public int? ProductTypeId { get; set; }
 }
 
+/// <summary>
+/// Tiến độ Lưu nháp chạy nền. Status: Queued, Running, Done, Conflict, Failed (Error là câu lý do).
+/// Total: số kệ phải sinh tầng, khung; Built: số kệ đã sinh xong.
+/// </summary>
+public record LayoutSaveJobViewModel(int RoomId, string Status, int Total, int Built, string? Error);
+
 /// <summary>Kết quả kiểm tra một kệ. Footprint = chỗ chiếm trên sàn (đã tính xoay).</summary>
 public record RackCheckViewModel(string Code, bool IsValid, string? Reason, double FootprintWidth, double FootprintDepth);
 

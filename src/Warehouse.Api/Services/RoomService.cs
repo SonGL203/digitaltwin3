@@ -16,11 +16,11 @@ public interface IRoomService
     RoomCreatedViewModel? CreateRoom(CreateRoomRequest request);
 }
 
-public class RoomService(IWarehouseStore store) : IRoomService
+public class RoomService(IWarehouseStore store, ILayoutStore layoutStore) : IRoomService
 {
     public IReadOnlyList<RoomSummaryViewModel> ListRooms()
     {
-        return store.GetRoomSummaries()
+        return layoutStore.GetRoomSummaries()
             .Select(r => new RoomSummaryViewModel(
                 r.Id, r.Name, r.Width, r.Depth, r.Height, r.GridSize,
                 r.RackCount, r.SlotCount, r.ObstacleCount))
@@ -32,9 +32,8 @@ public class RoomService(IWarehouseStore store) : IRoomService
         var room = store.GetRoom(roomId);
         if (room is null) return null;
 
-        var slotsPerRack = store.GetSlotsOfRacks(room.Racks.Select(r => r.Id).ToList())
-            .GroupBy(s => s.RackId)
-            .ToDictionary(g => g.Key, g => g.Count());
+        // Chỉ cần số khung mỗi kệ: đếm trên Levels, không tải cả triệu dòng Slots về rồi mới đếm
+        var slotsPerRack = layoutStore.CountSlotsPerRack(roomId);
 
         var racks = room.Racks.Select(r =>
         {

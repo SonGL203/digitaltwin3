@@ -86,7 +86,18 @@ export function createCanvas(container, { onCursor } = {}) {
   }
 
   // ================= VẼ =================
+  // draw() chỉ hẹn vẽ ở khung hình kế tiếp: một sự kiện gọi draw() nhiều lần (fit + redraw, chuột di liên tục)
+  // vẫn chỉ vẽ một lần. Kho hàng nghìn kệ mà vẽ lại đồng bộ mỗi lần gọi thì trình duyệt đơ.
+  let frame = 0;
   function draw() {
+    if (frame) return;
+    frame = requestAnimationFrame(function () {
+      frame = 0;
+      drawNow();
+    });
+  }
+
+  function drawNow() {
     const colors = readColors();
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // vẽ bằng px CSS, nét vẫn sắc trên màn hình mật độ cao
@@ -109,7 +120,7 @@ export function createCanvas(container, { onCursor } = {}) {
     for (const o of room.obstacles) drawObstacle(o, colors, o.id === state.selectedObstacleId);
 
     const movingId = state.preview?.source === 'drag' ? state.preview.rackId : null;
-    for (const r of room.racks) drawRack(r, colors, r.id === state.selectedRackId, r.id === movingId);
+    drawRacks(room.racks, colors, movingId);
 
     // Mép phòng vẽ sau kệ, đậm: đó chính là tường bao
     ctx.strokeStyle = colors.roomEdge;
@@ -130,19 +141,37 @@ export function createCanvas(container, { onCursor } = {}) {
     const perMeter = Math.round(1 / step);
     const hasMajor = perMeter > 1 && Math.abs(perMeter * step - 1) < 1e-9;
 
+    // Chỉ các vạch nằm trong màn hình; vạch thường và vạch đậm mỗi loại gom vào một path
+    const px = step * view.scale;
     const cols = Math.floor(room.width / step + 1e-9);
-    for (let i = 1; i <= cols; i++) {
-      const x = Math.round(left + i * step * view.scale) + 0.5;
-      if (x > left + w) break;
-      ctx.strokeStyle = hasMajor && i % perMeter === 0 ? colors.gridMajor : colors.grid;
-      line(x, top, x, top + h);
-    }
     const rows = Math.floor(room.depth / step + 1e-9);
-    for (let j = 1; j <= rows; j++) {
-      const y = Math.round(top + j * step * view.scale) + 0.5;
-      if (y > top + h) break;
-      ctx.strokeStyle = hasMajor && j % perMeter === 0 ? colors.gridMajor : colors.grid;
-      line(left, y, left + w, y);
+    const firstCol = Math.max(1, Math.ceil(-left / px));
+    const lastCol = Math.min(cols, Math.floor((size.width - left) / px));
+    const firstRow = Math.max(1, Math.ceil(-top / px));
+    const lastRow = Math.min(rows, Math.floor((size.height - top) / px));
+    const y1 = Math.max(top, 0);
+    const y2 = Math.min(top + h, size.height);
+    const x1 = Math.max(left, 0);
+    const x2 = Math.min(left + w, size.width);
+
+    for (const major of hasMajor ? [false, true] : [false]) {
+      ctx.strokeStyle = major ? colors.gridMajor : colors.grid;
+      ctx.beginPath();
+      for (let i = firstCol; i <= lastCol; i++) {
+        if (hasMajor && (i % perMeter === 0) !== major) continue;
+        const x = Math.round(left + i * px) + 0.5;
+        if (x > left + w) break;
+        ctx.moveTo(x, y1);
+        ctx.lineTo(x, y2);
+      }
+      for (let j = firstRow; j <= lastRow; j++) {
+        if (hasMajor && (j % perMeter === 0) !== major) continue;
+        const y = Math.round(top + j * px) + 0.5;
+        if (y > top + h) break;
+        ctx.moveTo(x1, y);
+        ctx.lineTo(x2, y);
+      }
+      ctx.stroke();
     }
   }
 
@@ -158,6 +187,58 @@ export function createCanvas(container, { onCursor } = {}) {
       ctx.lineWidth = 3;
       ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
     }
+  }
+
+  /**
+   * Vẽ mọi kệ theo lô: chỉ kệ nằm trong màn hình, mỗi loại nét (nền, vạch chia ô, viền) gom vào MỘT path rồi
+   * fill/stroke một lần, thay vì mỗi kệ, mỗi vạch một lệnh stroke (9 990 kệ × 9 vạch ≈ 90 000 lệnh).
+   * Kệ đang chọn và kệ đang kéo vẽ riêng sau cùng bằng drawRack (viền đậm, mờ).
+   */
+  function drawRacks(racks, colors, movingId) {
+    const visible = [];
+    let selected = null;
+    let moving = null;
+    for (const r of racks) {
+      if (r.id === movingId) { moving = r; continue; }
+      if (r.id === state.selectedRackId) { selected = r; continue; }
+      const x = toScreenX(r.x);
+      const y = toScreenY(r.y);
+      const w = r.footprintWidth * view.scale;
+      const h = r.footprintDepth * view.scale;
+      if (x > size.width || y > size.height || x + w < 0 || y + h < 0) continue;   // ngoài màn hình
+      visible.push({ r, x, y, w, h });
+    }
+
+    ctx.fillStyle = colors.rack;
+    ctx.beginPath();
+    for (const v of visible) ctx.rect(v.x, v.y, v.w, v.h);
+    ctx.fill();
+
+    // Vạch chia ô: chỉ khi một ô rộng ít nhất 3 px trên màn hình, nhỏ hơn thì chỉ thấy một mảng đặc
+    ctx.strokeStyle = colors.rackBay;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const { r, x, y, w, h } of visible) {
+      const step = r.bayWidth * view.scale;
+      if (step < 3) continue;
+      for (let i = 1; i < r.bays; i++) {
+        const d = i * step;
+        if (r.rotation === 90) { ctx.moveTo(x, y + d); ctx.lineTo(x + w, y + d); }
+        else { ctx.moveTo(x + d, y); ctx.lineTo(x + d, y + h); }
+      }
+    }
+    ctx.stroke();
+
+    ctx.strokeStyle = colors.rackEdge;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (const v of visible) ctx.rect(v.x, v.y, v.w, v.h);
+    ctx.stroke();
+
+    for (const v of visible) drawLabel(v.r.code, v.x, v.y, v.w, v.h, colors.label);   // tự bỏ khi kệ quá nhỏ
+
+    if (selected) drawRack(selected, colors, true, false);
+    if (moving) drawRack(moving, colors, moving.id === state.selectedRackId, true);
   }
 
   function drawRack(r, colors, selected, moving) {

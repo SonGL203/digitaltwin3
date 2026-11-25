@@ -16,6 +16,8 @@ builder.Services.AddScoped<IBatchStore, BatchStore>();
 builder.Services.AddScoped<IBatchService, BatchService>();
 builder.Services.AddSingleton<AllocationQueue>();
 builder.Services.AddHostedService<AllocationWorker>();
+builder.Services.AddSingleton<LayoutSaveQueue>();
+builder.Services.AddHostedService<LayoutSaveWorker>();
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())

@@ -104,16 +104,28 @@ function drawSelected() {
   }
 }
 
+// Kho hàng nghìn kệ: dựng hết thành nút thì mỗi lần chọn kệ trình duyệt phải dựng lại cả nghìn dòng.
+// Chỉ hiện chừng này dòng đầu (luôn kèm kệ đang chọn); kệ còn lại chọn bằng cách bấm trên mặt bằng.
+const MAX_RACK_ROWS = 200;
+
 function drawRackList() {
   const racks = state.room.racks;
   const totalSlots = racks.reduce((sum, r) => sum + (r.slotCount ?? 0), 0);
-  $('rackListTitle').textContent = `Kệ (${racks.length}) · ${formatInt(totalSlots)} khung`;
-  $('rackList').innerHTML = racks.map((r) => `
+  $('rackListTitle').textContent = `Kệ (${formatInt(racks.length)}) · ${formatInt(totalSlots)} khung`;
+
+  const shown = racks.slice(0, MAX_RACK_ROWS);
+  const selected = selectedRack();
+  if (selected && !shown.includes(selected)) shown.unshift(selected);
+
+  const rows = shown.map((r) => `
     <li>
       <button type="button" class="pick" data-rack-id="${r.id}" aria-pressed="${r.id === state.selectedRackId}">
         <span>${escapeHtml(r.code)}</span><span class="muted">${slotText(r.slotCount)}</span>
       </button>
-    </li>`).join('');
+    </li>`);
+  const hidden = racks.length - shown.length;
+  if (hidden > 0) rows.push(`<li class="muted">… và ${formatInt(hidden)} kệ nữa: bấm kệ trên mặt bằng để chọn.</li>`);
+  $('rackList').innerHTML = rows.join('');
 }
 
 function drawObstacleList() {
@@ -136,10 +148,12 @@ function slotText(count) {
 
 // Thanh trên cùng bảng bên: trạng thái bản nháp + nút Lưu / Bỏ
 function drawDraftBar() {
+  // Đang lưu: chỉ hiện vòng tròn quay, không hiện số kệ đã ghi
   if (state.saving) draftStatus.textContent = 'Đang lưu…';
   else if (!state.dirty) draftStatus.textContent = 'Đã lưu';
   else draftStatus.textContent = state.draftIssue ? `Chưa lưu · ${state.draftIssue}` : 'Có thay đổi chưa lưu';
-  draftStatus.className = 'draft-status' + (state.dirty ? (state.draftIssue ? ' error' : ' dirty') : '');
+  draftStatus.className = 'draft-status'
+    + (state.saving ? ' saving' : state.dirty ? (state.draftIssue ? ' error' : ' dirty') : '');
   btnSave.disabled = !state.dirty || state.saving;
   btnDiscard.disabled = !state.dirty || state.saving;
 }
@@ -243,9 +257,21 @@ newRackForm.addEventListener('input', function () {
 });
 
 // Form đặt dãy: lưu số hàng, số kệ mỗi hàng, khe, lối đi để dùng khi đặt bằng chuột
-function drawArrayLive() {
+// Một dãy tối đa chừng này kệ. Mỗi lần chuột sang ô mới, cả bản nháp + cả dãy được gửi lên kiểm tra:
+// dãy 400 × 400 = 160 000 kệ là hơn 30 MB, server từ chối, trình duyệt thì đơ vì phải dựng, vẽ chừng ấy kệ.
+const MAX_ARRAY_RACKS = 10000;
+
+function drawArrayLive(tooMany = null) {
   const { rows, perRow } = state.newArray;
-  $('arrayLive').textContent = `Sẽ đặt ${rows} hàng × ${perRow} kệ = ${formatInt(rows * perRow)} kệ.`;
+  const live = $('arrayLive');
+  if (tooMany) {
+    live.textContent = `${formatInt(tooMany)} kệ là quá nhiều: một dãy tối đa ${formatInt(MAX_ARRAY_RACKS)} kệ. `
+      + `Vẫn dùng ${rows} hàng × ${perRow} kệ.`;
+    live.className = 'live full error';
+    return;
+  }
+  live.textContent = `Sẽ đặt ${rows} hàng × ${perRow} kệ = ${formatInt(rows * perRow)} kệ.`;
+  live.className = 'live full';
 }
 
 newArrayForm.addEventListener('input', function () {
@@ -253,6 +279,10 @@ newArrayForm.addEventListener('input', function () {
   const next = { ...state.newArray };
   if (values.rows >= 1) next.rows = values.rows;
   if (values.perRow >= 1) next.perRow = values.perRow;
+  if (next.rows * next.perRow > MAX_ARRAY_RACKS) {
+    drawArrayLive(next.rows * next.perRow);   // giữ cấu hình cũ, báo đỏ
+    return;
+  }
   if (values.gapAlong >= 0 && newArrayForm.elements.gapAlong.value !== '') next.gapAlong = values.gapAlong;
   if (values.aisle >= 0 && newArrayForm.elements.aisle.value !== '') next.aisle = values.aisle;
   state.newArray = next;
